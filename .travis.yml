@@ -20,7 +20,7 @@ env:
   - XWALK_CHANNEL=canary XWALK_VERSION=17.45.432.0
 
 before_install:
-  # Travis builder git clone REC into otcshare/realsense-extensions-crosswalk
+  # Travis builder git clone REC into crosswalk-project/realsense-extensions-crosswalk
   # and change directory into it.
   # Before install, we need to go back to the build root directory.
   - cd ../..
@@ -34,7 +34,7 @@ install:
   - chmod a+x `pwd`/crosswalk-${XWALK_VERSION}/make_apk.py
   - export PATH="$PATH":`pwd`/crosswalk-${XWALK_VERSION}
   # Copy REC repo from Travis' git.checkout step
-  - cp -r otcshare/realsense-extensions-crosswalk src/extensions
+  - cp -r crosswalk-project/realsense-extensions-crosswalk src/extensions
   # Sync the project
   - echo "solutions=[{'name':'src','url':'https://github.com/crosswalk-project/crosswalk-extensions-sdk.git@origin/master','deps_file':'DEPS','managed':False,'custom_deps':{'extensions/realsense/android':'ssh://git@github.com/otcshare/realsense-extensions-crosswalk-android.git'},},]" > .gclient
   - echo "target_os=['android']" >> .gclient
