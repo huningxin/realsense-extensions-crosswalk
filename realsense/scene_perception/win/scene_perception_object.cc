@@ -930,13 +930,18 @@ void ScenePerceptionObject::DoGetMeshData(
     block_meshing_data_ = scene_perception_->CreatePXCBlockMeshingData(
         max_block_mesh_, max_vertices_, max_faces_, b_use_color_);
   }
-  if (doing_meshing_updating_
-      || !(scene_perception_->IsReconstructionUpdated())
-      || !(base::TimeTicks::Now() - last_meshing_time_ >
-        base::TimeDelta::FromMilliseconds(1000))) {
+  if (doing_meshing_updating_) {
     MeshData data;
     info->PostResult(GetMeshData::Results::Create(
-        data, std::string("Meshing thread is busy or no new mesh data.")));
+        data, std::string("Meshing thread is busy.")));
+  } else if (!(scene_perception_->IsReconstructionUpdated())) {
+    MeshData data;
+    info->PostResult(GetMeshData::Results::Create(
+        data, std::string("Reconstruction is not updated.")));
+  } else if (!(base::TimeTicks::Now() - last_meshing_time_ > base::TimeDelta::FromMilliseconds(1000))) {
+    MeshData data;
+    info->PostResult(GetMeshData::Results::Create(
+        data, std::string("It is less than 1000ms after previous meshing.")));
   } else {
     doing_meshing_updating_ = true;
     DLOG(INFO) << "Request meshing";

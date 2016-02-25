@@ -13,6 +13,8 @@ var volumePreviewRadio = document.getElementById('volumePreviewRadio');
 var meshingRadio = document.getElementById('meshingRadio');
 var volumePreviewRender = document.getElementById('volumePreviewRender');
 var meshingRender = document.getElementById('meshingRender');
+var meshingCanvas = document.getElementById('meshingCavans');
+var videoElement = document.getElementById('preview');
 
 var blockMeshMap = {};
 var totalMesh = null;
@@ -45,6 +47,8 @@ var volumePreview_image_data = volumePreview_context.createImageData(
 var getting_volumePreview_image = false;
 
 var sp;
+
+var gl;
 
 function ConvertDepthToRGBUsingHistogram(
     depthImage, nearColor, farColor, rgbImage) {
@@ -114,6 +118,16 @@ function CmdFlowController(size) {
   };
 }
 function main() {
+  /*
+  navigator.mediaDevices.getUserMedia({video: {
+    width: {exact: 320},
+    height: {exact: 240},
+    frameRate: {exact: 60}}})
+  .then(function(stream) {
+    videoElement.srcObject = stream;
+  });
+*/
+
   sp = realsense.ScenePerception;
 
   var sample_fps = new Stats();
@@ -126,6 +140,7 @@ function main() {
   var sampleFlowController = new CmdFlowController(5);
 
   var updateSampleView = function() {
+    //return;
     if (!sampleFlowController.get())
       return;
     sp.getSample().then(function(sample) {
@@ -168,13 +183,18 @@ function main() {
     }
   };
 
+  var onmeshupdatedTime = 0;
   sp.onmeshupdated = function(e) {
     thisObj = this;
+    onmeshupdatedTime = performance.now();
     sp.getMeshData().then(function(meshes) {
-      var func = updateMeshes.bind(thisObj, meshes);
+      var getMeshDataTime = performance.now() - onmeshupdatedTime;
+      console.log("getMeshData succeeds " + getMeshDataTime.toFixed(2) + 'ms');
+      //var func = updateMeshes.bind(thisObj, meshes);
+      var func = updateMeshes2.bind(thisObj, meshes);
       // do the updateMeshes asynchronously
       setTimeout(func, 0);
-    }, function(e) {console.log(e);});
+    }, function(e) {/*console.log(e + ' ' + Date.now());*/});
   };
 
   var meshesCreated = false;
@@ -271,6 +291,7 @@ function main() {
     }
   }, false);
 
+  /*
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setClearColor(0x000000, 1);
   renderer.setSize(640, 480);
@@ -322,6 +343,11 @@ function main() {
   scene.add(x_axis);
 
   animate();
+  */
+  gl = meshingCanvas.getContext('webgl');
+
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
 }
 
 function removeAllMeshes() {
@@ -410,6 +436,91 @@ function updateCameraPose(cameraPoseArray, accuracy) {
   x_axis.geometry.verticesNeedUpdate = true;
 }
 
+function drawMeshes() {
+  console.time('drawMeshes');
+  console.log('vertices to draw ' + meshToDraw.numberOfVertices);
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  var vs = 'attribute vec3 pos;' +
+         'void main() { gl_Position = vec4(pos, 1); }';
+  var fs = 'precision mediump float;' +
+       'void main() { gl_FragColor = vec4(0.8,0.8,0.8,1); }';
+  var program = createProgram(vs,fs);
+  gl.useProgram(program);
+
+  program.vertexPosAttrib = gl.getAttribLocation(program, 'pos');
+  
+  var vertexPosBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexPosBuffer);
+  gl.enableVertexAttribArray(program.vertexPosAttrib);
+  gl.vertexAttribPointer(program.vertexPosAttrib, 3, gl.FLOAT, false, 16, 0);
+
+  gl.bufferData(gl.ARRAY_BUFFER, meshToDraw.vertices, gl.STATIC_DRAW);
+  gl.drawArrays(gl.TRIANGLES, 0, meshToDraw.numberOfVertices);
+
+  console.timeEnd('drawMeshes');
+}
+
+var currentMeshes = {};
+var meshToDraw = {vertices: null, numberOfVertices: 0};
+
+function mergeMeshes2() {
+  console.time('mergeMeshes2');
+  meshToDraw.numberOfVertices = 0;
+  for (var id in currentMeshes) {
+    var mesh = currentMeshes[id];
+    meshToDraw.numberOfVertices += mesh.numberOfVertices;
+  }
+
+  meshToDraw.vertices = new Float32Array(meshToDraw.numberOfVertices * 4);
+
+  var offset = 0;
+  for (var id in currentMeshes) {
+    var mesh = currentMeshes[id];
+    meshToDraw.vertices.set(mesh.vertices, offset);
+    offset += mesh.numberOfVertices * 4;
+  }
+
+  setTimeout(drawMeshes, 0);
+
+  console.timeEnd('mergeMeshes2');
+}
+
+function updateMeshes2(meshes) {
+  console.time('updateMeshes2');
+  console.log('numberOfVertices: ' + meshes.numberOfVertices);
+  console.log('numberOfBlocks: ' + meshes.blockMeshes.length);
+
+  var vertices = meshes.vertices;
+  var colors = meshes.colors;
+  var faces = meshes.faces;
+  var blockMeshes = meshes.blockMeshes;
+
+  var updated = 0;
+  for (var j = 0; j < blockMeshes.length; ++j) {
+    var blockMesh = blockMeshes[j];
+    if (blockMesh.numVertices == 0 || blockMesh.numFaces == 0)
+      continue;
+    if (blockMesh.meshId in currentMeshes) {
+      delete currentMeshes[blockMesh.meshId];
+      updated++;
+    }
+    const bytesPerFloat = 4;
+    const floatsPerVertex = 4;
+    var blockVertices = vertices.slice(blockMesh.vertexStartIndex * floatsPerVertex, (blockMesh.vertexStartIndex + blockMesh.numVertices) * floatsPerVertex);
+    currentMeshes[blockMesh.meshId] = {
+      numberOfVertices: blockMesh.numVertices,
+      vertices: blockVertices
+    };
+  }
+
+  setTimeout(mergeMeshes2, 0);
+
+  console.log('updated mesh: ' + updated);
+  console.timeEnd('updateMeshes2');
+}
+
 function updateMeshes(meshes) {
   console.time('updateMeshes');
   var vertices = meshes.vertices;
@@ -490,3 +601,5 @@ function animate() {
   render();
   stats.update();
 }
+
+
