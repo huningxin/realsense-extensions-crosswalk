@@ -531,25 +531,42 @@ function drawMeshes3() {
   gl.clear(gl.COLOR_BUFFER_BIT);
 
   var indexBuffer = gl.createBuffer();
-
   var vertexPosBuffer = gl.createBuffer();
+  var vertexColorBuffer = gl.createBuffer();
   
   var vs = 'attribute vec3 pos;' +
-         'void main() { gl_Position = vec4(pos, 1); }';
+         'attribute vec3 aVertexColor;' +
+         'varying vec3 vColor;' + 
+         'void main() { gl_Position = vec4(pos, 1); vColor = aVertexColor;}';
   var fs = 'precision mediump float;' +
-       'void main() { gl_FragColor = vec4(0.8,0.8,0.8,1); }';
+       'varying vec3 vColor;' +
+       'void main() { gl_FragColor = vec4(vColor, 1); }';
   var program = createProgram(vs,fs);
   
   program.vertexPosAttrib = gl.getAttribLocation(program, 'pos');
-
-  gl.useProgram(program);
   gl.enableVertexAttribArray(program.vertexPosAttrib);
+
+  program.vertexColorAttribute = gl.getAttribLocation(program, "aVertexColor");
+  gl.enableVertexAttribArray(program.vertexColorAttribute);
+  
+  gl.useProgram(program);
+
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, meshToDraw.faces, gl.STATIC_DRAW);
+  
   gl.bindBuffer(gl.ARRAY_BUFFER, vertexPosBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, meshToDraw.vertices, gl.STATIC_DRAW);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, meshToDraw.colors, gl.STATIC_DRAW);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexPosBuffer);
   gl.vertexAttribPointer(program.vertexPosAttrib, 3, gl.FLOAT, false, 16, 0);
 
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer);
+  gl.vertexAttribPointer(program.vertexColorAttribute, 3, gl.UNSIGNED_BYTE, true, 0, 0);
+
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
   gl.drawElements(gl.TRIANGLES, meshToDraw.numberOfFaces * 3, gl.UNSIGNED_SHORT, 0);
 
   console.timeEnd('drawMeshes3');
@@ -572,12 +589,14 @@ function mergeMeshes3() {
 
   meshToDraw.vertices = new Float32Array(meshToDraw.numberOfVertices * 4);
   meshToDraw.faces = new Uint16Array(meshToDraw.numberOfFaces * 3);
+  meshToDraw.colors = new Uint8Array(meshToDraw.numberOfVertices * 3);
 
   var vertexOffset = 0;
   var faceOffset = 0;
   for (var id in currentMeshes) {
     var mesh = currentMeshes[id];
     meshToDraw.vertices.set(mesh.vertices, vertexOffset * 4);
+    meshToDraw.colors.set(mesh.colors, vertexOffset * 3);
     for (var i = 0; i < mesh.numberOfFaces * 3; faceOffset++, i++) {
       meshToDraw.faces[faceOffset] = mesh.faces[i] + vertexOffset;
     }
@@ -598,29 +617,47 @@ function drawMeshes4() {
   gl.clear(gl.COLOR_BUFFER_BIT);
 
   var indexBuffer = gl.createBuffer();
-
   var vertexPosBuffer = gl.createBuffer();
+  var vertexColorBuffer = gl.createBuffer();
   
   var vs = 'attribute vec3 pos;' +
-         'void main() { gl_Position = vec4(pos, 1); }';
+         'attribute vec3 aVertexColor;' +
+         'varying vec3 vColor;' + 
+         'void main() { gl_Position = vec4(pos, 1); vColor = aVertexColor;}';
   var fs = 'precision mediump float;' +
-       'void main() { gl_FragColor = vec4(0.8,0.8,0.8,1); }';
+       'varying vec3 vColor;' +
+       'void main() { gl_FragColor = vec4(vColor, 1); }';
   var program = createProgram(vs,fs);
   
   program.vertexPosAttrib = gl.getAttribLocation(program, 'pos');
+  gl.enableVertexAttribArray(program.vertexPosAttrib);
+
+  program.vertexColorAttribute = gl.getAttribLocation(program, "aVertexColor");
+  gl.enableVertexAttribArray(program.vertexColorAttribute);
+
+  gl.useProgram(program);
 
   var vertexOffset = 0;
   var faceOffset = 0;
   for (var id in currentMeshes) {
     var mesh = currentMeshes[id];
-    gl.useProgram(program);
-    gl.enableVertexAttribArray(program.vertexPosAttrib);
+
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.faces, gl.STATIC_DRAW);
+    
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexPosBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.STATIC_DRAW);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, mesh.colors, gl.STATIC_DRAW);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexPosBuffer);
     gl.vertexAttribPointer(program.vertexPosAttrib, 3, gl.FLOAT, false, 16, 0);
 
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer);
+    gl.vertexAttribPointer(program.vertexColorAttribute, 3, gl.UNSIGNED_BYTE, true, 0, 0);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
     gl.drawElements(gl.TRIANGLES, mesh.numberOfFaces * 3, gl.UNSIGNED_SHORT, 0);
   }
 
@@ -651,13 +688,15 @@ function updateMeshes3(meshes) {
     const floatsPerVertex = 4;
     const uint16PerFace = 3;
     var verticesBuffer = vertices.slice(blockMesh.vertexStartIndex, blockMesh.vertexStartIndex + blockMesh.numVertices * floatsPerVertex);
-    var facesBuffer = faces.slice(blockMesh.faceStartIndex, blockMesh.faceStartIndex + (blockMesh.numFaces - 1)* uint16PerFace);
+    var facesBuffer = faces.slice(blockMesh.faceStartIndex, blockMesh.faceStartIndex + blockMesh.numFaces* uint16PerFace);
+    var colorsBuffer = colors.slice(3 * blockMesh.vertexStartIndex / 4, 3 * blockMesh.vertexStartIndex / 4 + blockMesh.numVertices * 3);
 
     currentMeshes[blockMesh.meshId] = {
       numberOfVertices: blockMesh.numVertices,
       vertices: verticesBuffer,
-      numberOfFaces: blockMesh.numFaces - 1,
+      numberOfFaces: blockMesh.numFaces,
       faces: facesBuffer,
+      colors: colorsBuffer
     };
   }
 

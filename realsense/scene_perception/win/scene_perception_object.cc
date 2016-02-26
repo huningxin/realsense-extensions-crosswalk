@@ -929,6 +929,9 @@ void ScenePerceptionObject::DoGetMeshData(
     // initialize the meshing_data buffer
     block_meshing_data_ = scene_perception_->CreatePXCBlockMeshingData(
         max_block_mesh_, max_vertices_, max_faces_, b_use_color_);
+
+    m_tempFacesNormals.reset(new float [3 * block_meshing_data_->QueryMaxNumberOfFaces()]);
+    m_tempVerticesFaceCount.reset(new int8[block_meshing_data_->QueryMaxNumberOfVertices()]);
   }
   if (doing_meshing_updating_) {
     MeshData data;
@@ -954,6 +957,147 @@ void ScenePerceptionObject::DoGetMeshData(
         base::Bind(&ScenePerceptionObject::DoMeshingUpdateOnMeshingThread,
                    base::Unretained(this),
                    base::Passed(&info)));
+  }
+}
+
+struct float3
+{
+public: 
+  float x, y, z;
+
+  float3() : x(0.0f), y(0.0f), z(0.0f)
+  {
+
+  }
+
+  float3(float _x, float _y, float _z) :x(_x), y(_y), z(_z)
+  {
+
+  }
+
+  float3(const float3& f3) : x(f3.x), y(f3.y), z(f3.z)
+  {
+
+  }
+  
+  float3 operator+(const float3 &f3) const
+  {
+    return float3(x + f3.x, y + f3.y, z + f3.z);
+  }
+
+  float3 operator-(const float3& rhs) const
+  {
+    return float3(x - rhs.x, y - rhs.y, z - rhs.z);
+  }
+
+  float3& operator=(const float3& f3)
+  {
+    if(this!=&f3)
+    {
+      x = f3.x;
+      y = f3.y;
+      z = f3.z;
+    }
+    return *this;
+  }
+
+  float dot(const float3& rhs) const
+  {
+    return (x * rhs.x) + (y * rhs.y) + (z * rhs.z);
+  }
+
+  float length() const
+  {
+    return sqrt(x * x + y * y + z * z);
+  }
+
+  float3 operator/(const float& fVal) const
+  {
+    assert(fVal!=0.0f);
+    return float3(x/fVal, y/fVal, z/fVal);
+  }
+
+  float3 operator*(const float& fVal) const
+  {
+    return float3(x*fVal, y*fVal, z*fVal);
+  }
+
+  float3& normalized()
+  {
+    float len = length();
+    if(len > 1E-16f)
+    {
+      len = 1.0f / len;
+      x = (x * len);
+      y = (y * len);
+      z = (z * len);
+    }
+    return *this;
+  }
+
+  float3 cross(const float3& lhs) const
+  {
+    return float3(lhs.y * z - lhs.z * y, lhs.z * x - lhs.x * z, lhs.x * y - lhs.y * x);
+  }
+};
+
+void ScenePerceptionObject::ComputeFaceNormal(float* pVertices, int* pFaces, float* pFacesNormals, int iFaceIndex)
+{
+  // Uses p2 as a new origin for p1,p3
+  const int i1 = pFaces[3 * iFaceIndex]; int i2 = pFaces[3 * iFaceIndex + 1]; int i3 = pFaces[3 * iFaceIndex + 2];
+  const float3 p1(pVertices[4 * i1], pVertices[4 * i1 + 1], pVertices[4 * i1 + 2]);
+  const float3 p2(pVertices[4 * i2], pVertices[4 * i2 + 1], pVertices[4 * i2 + 2]);
+  const float3 p3(pVertices[4 * i3], pVertices[4 * i3 + 1], pVertices[4 * i3 + 2]);
+  const float3 a = p3 - p2;
+  const float3 b = p1 - p2;
+  float3 pn = a.cross(b) * (-1.0f);
+  pn.normalized();
+
+  memcpy_s(&pFacesNormals[3 * iFaceIndex], 3 * sizeof(float), &pn, 3 * sizeof(float));
+}
+
+void ScenePerceptionObject::ComputeVerticeNormal(float* pNormals, float* pVertices, int iNumVertices, int* pFaces, int iNumFaces)
+{ 
+  memset(pNormals, 0, 3 * iNumVertices * sizeof(float));
+  memset(m_tempVerticesFaceCount.get(), 0, iNumVertices);
+  
+  for(int iFaceIndex = 0; iFaceIndex < iNumFaces; ++iFaceIndex)
+  {
+    ComputeFaceNormal(pVertices, pFaces, m_tempFacesNormals.get(), iFaceIndex);
+  }
+
+  for (int fi = 0; fi < iNumFaces; fi++)
+  {
+    int i = pFaces[3 * fi];
+    pNormals[3 * i] += m_tempFacesNormals[3 * fi];
+    pNormals[3 * i + 1] += m_tempFacesNormals[3 * fi + 1];
+    pNormals[3 * i + 2] += m_tempFacesNormals[3 * fi + 2];
+    m_tempVerticesFaceCount[i] ++;
+
+    i = pFaces[3 * fi + 1];
+    pNormals[3 * i] += m_tempFacesNormals[3 * fi];
+    pNormals[3 * i + 1] += m_tempFacesNormals[3 * fi + 1];
+    pNormals[3 * i + 2] += m_tempFacesNormals[3 * fi + 2];
+    m_tempVerticesFaceCount[i] ++;
+
+    i = pFaces[3 * fi + 2];
+    pNormals[3 * i] += m_tempFacesNormals[3 * fi];
+    pNormals[3 * i + 1] += m_tempFacesNormals[3 * fi + 1];
+    pNormals[3 * i + 2] += m_tempFacesNormals[3 * fi + 2];
+    m_tempVerticesFaceCount[i] ++;
+  }
+
+  for (int vi = 0; vi < iNumVertices; vi++)
+  {
+    float3 pn(pNormals[3 * vi], pNormals[3 * vi + 1], pNormals[3 * vi + 2]);
+    if (m_tempVerticesFaceCount[vi] > 0)
+    {
+      pn = pn / m_tempVerticesFaceCount[vi];
+    }
+    pn.normalized();
+    pNormals[3 * vi] = pn.x;
+    pNormals[3 * vi + 1] = pn.y;
+    pNormals[3 * vi + 2] = pn.z;
   }
 }
 
@@ -986,13 +1130,15 @@ void ScenePerceptionObject::DoMeshingUpdateOnMeshingThread(
   const int vertices_byte_length = num_of_vertices * 4 * sizeof(float);
   const int faces_byte_length = num_of_faces * 3 * sizeof(unsigned short);
   const int colors_byte_length = num_of_vertices * 3 * sizeof(unsigned char);
+  const int normals_byte_length = num_of_vertices * 3 * sizeof(float);
 
   meshing_data_message_size_ =
       header_byte_length
       + num_of_blockmeshes * blockmesh_byte_length
       + vertices_byte_length
       + faces_byte_length
-      + colors_byte_length;
+      + colors_byte_length
+      + normals_byte_length;
 
   meshing_data_message_.reset(
       new uint8[meshing_data_message_size_]);
@@ -1043,6 +1189,17 @@ void ScenePerceptionObject::DoMeshingUpdateOnMeshingThread(
 
   char* colors_offset = faces_offset + faces_byte_length;
   memcpy(colors_offset, reinterpret_cast<char*>(colors), colors_byte_length);
+
+  char* normals_offset = colors_offset + colors_byte_length;
+  float* normals = reinterpret_cast<float*>(normals_offset);
+  for (int i = 0; i < num_of_blockmeshes; ++i, ++block_mesh_data) {
+    // create new buffers
+    if((block_mesh_data->numVertices > 0) && (block_mesh_data->numFaces > 0))
+    {
+      ComputeVerticeNormal(normals + 3 * block_mesh_data->vertexStartIndex / 4, vertices + block_mesh_data->vertexStartIndex, 
+          block_mesh_data->numVertices, faces + block_mesh_data->faceStartIndex, block_mesh_data->numFaces);
+    }
+  }
 
   scoped_ptr<base::ListValue> result(new base::ListValue());
   result->Append(base::BinaryValue::CreateWithCopiedBuffer(

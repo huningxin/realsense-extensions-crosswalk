@@ -153,6 +153,9 @@ class ScenePerceptionObject : public xwalk::common::EventTarget {
   void triggerError(std::string msg);
 
  private:
+  void ComputeFaceNormal(float* pVertices, int* pFaces, float* pFacesNormals, int iFaceIndex);
+  void ComputeVerticeNormal(float* pNormals, float* pVertices, int iNumVertices, int* pFaces, int iNumFaces);
+  
   enum State {
     // Before the pipeline is initialized.
     IDLE,
@@ -239,6 +242,9 @@ class ScenePerceptionObject : public xwalk::common::EventTarget {
 
   scoped_ptr<uint8[]> meshing_data_message_;
   size_t meshing_data_message_size_;
+
+  scoped_ptr<float[]> m_tempFacesNormals;
+  scoped_ptr<int8[]> m_tempVerticesFaceCount;
 };
 
 }  // namespace scene_perception

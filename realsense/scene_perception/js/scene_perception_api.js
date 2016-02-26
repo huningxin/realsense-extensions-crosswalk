@@ -91,12 +91,18 @@ var ScenePerception = function(objectId) {
         new Uint8Array(data,
                        colorsOffset,
                        numberOfVertices * 3);
+    var normalsOffset = colorsOffset + numberOfVertices * 3;
+    var normals =
+        new Float32Array(data,
+                         normalsOffset,
+                         numberOfVertices * 3);
     return {blockMeshes: blockMeshes,
       numberOfVertices: numberOfVertices,
       vertices: vertices,
       colors: colors,
       numberOfFaces: numberOfFaces,
-      faces: faces};
+      faces: faces,
+      normals: normals};
   }
 
   function wrapVoxelsReturn(data) {
