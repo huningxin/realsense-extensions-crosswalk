@@ -191,7 +191,7 @@ function main() {
       var getMeshDataTime = performance.now() - onmeshupdatedTime;
       console.log("getMeshData succeeds " + getMeshDataTime.toFixed(2) + 'ms');
       //var func = updateMeshes.bind(thisObj, meshes);
-      var func = updateMeshes2.bind(thisObj, meshes);
+      var func = updateMeshes3.bind(thisObj, meshes);
       // do the updateMeshes asynchronously
       setTimeout(func, 0);
     }, function(e) {/*console.log(e + ' ' + Date.now());*/});
@@ -508,10 +508,14 @@ function updateMeshes2(meshes) {
     }
     const bytesPerFloat = 4;
     const floatsPerVertex = 4;
+    const uint16PerFace = 3;
     var blockVertices = vertices.slice(blockMesh.vertexStartIndex * floatsPerVertex, (blockMesh.vertexStartIndex + blockMesh.numVertices) * floatsPerVertex);
+    var blockFaces = faces.slice(blockMesh.faceStartIndex * floatsPerFace, (blockMesh.faceStartIndex + blockMesh.numFaces) * uint16PerFace);
     currentMeshes[blockMesh.meshId] = {
       numberOfVertices: blockMesh.numVertices,
-      vertices: blockVertices
+      vertices: blockVertices,
+      numberOfFaces: blockMesh.numFaces,
+      faces: blockFaces,
     };
   }
 
@@ -520,6 +524,215 @@ function updateMeshes2(meshes) {
   console.log('updated mesh: ' + updated);
   console.timeEnd('updateMeshes2');
 }
+
+function drawMeshes3() {
+  console.time('drawMeshes3');
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  var indexBuffer = gl.createBuffer();
+
+  var vertexPosBuffer = gl.createBuffer();
+  
+  var vs = 'attribute vec3 pos;' +
+         'void main() { gl_Position = vec4(pos, 1); }';
+  var fs = 'precision mediump float;' +
+       'void main() { gl_FragColor = vec4(0.8,0.8,0.8,1); }';
+  var program = createProgram(vs,fs);
+  
+  program.vertexPosAttrib = gl.getAttribLocation(program, 'pos');
+
+  gl.useProgram(program);
+  gl.enableVertexAttribArray(program.vertexPosAttrib);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, meshToDraw.faces, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexPosBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, meshToDraw.vertices, gl.STATIC_DRAW);
+  gl.vertexAttribPointer(program.vertexPosAttrib, 3, gl.FLOAT, false, 16, 0);
+
+  gl.drawElements(gl.TRIANGLES, meshToDraw.numberOfFaces * 3, gl.UNSIGNED_SHORT, 0);
+
+  console.timeEnd('drawMeshes3');
+}
+
+function mergeMeshes3() {
+  console.time('mergeMeshes3');
+  meshToDraw.numberOfVertices = 0;
+  meshToDraw.numberOfFaces = 0;
+  var mergedMeshes = 0;
+  for (var id in currentMeshes) {
+    var mesh = currentMeshes[id];
+    meshToDraw.numberOfVertices += mesh.numberOfVertices;
+    meshToDraw.numberOfFaces += mesh.numberOfFaces;
+    mergedMeshes++;
+  }
+  console.log('mergedMeshes: ' + mergedMeshes);
+  console.log('meshToDraw.numberOfVertices: ' + meshToDraw.numberOfVertices);
+  console.log('meshToDraw.numberOfFaces: ' + meshToDraw.numberOfFaces);
+
+  meshToDraw.vertices = new Float32Array(meshToDraw.numberOfVertices * 4);
+  meshToDraw.faces = new Uint16Array(meshToDraw.numberOfFaces * 3);
+
+  var vertexOffset = 0;
+  var faceOffset = 0;
+  for (var id in currentMeshes) {
+    var mesh = currentMeshes[id];
+    meshToDraw.vertices.set(mesh.vertices, vertexOffset * 4);
+    for (var i = 0; i < mesh.numberOfFaces * 3; faceOffset++, i++) {
+      meshToDraw.faces[faceOffset] = mesh.faces[i] + vertexOffset;
+    }
+    vertexOffset += mesh.numberOfVertices;
+  }
+
+  console.timeEnd('mergeMeshes3');
+
+  setTimeout(drawMeshes3, 0);
+}
+
+function drawMeshes4() {
+  console.time('drawMeshes4');
+  meshToDraw.numberOfVertices = 0;
+  meshToDraw.numberOfFaces = 0;
+  
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  var indexBuffer = gl.createBuffer();
+
+  var vertexPosBuffer = gl.createBuffer();
+  
+  var vs = 'attribute vec3 pos;' +
+         'void main() { gl_Position = vec4(pos, 1); }';
+  var fs = 'precision mediump float;' +
+       'void main() { gl_FragColor = vec4(0.8,0.8,0.8,1); }';
+  var program = createProgram(vs,fs);
+  
+  program.vertexPosAttrib = gl.getAttribLocation(program, 'pos');
+
+  var vertexOffset = 0;
+  var faceOffset = 0;
+  for (var id in currentMeshes) {
+    var mesh = currentMeshes[id];
+    gl.useProgram(program);
+    gl.enableVertexAttribArray(program.vertexPosAttrib);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.faces, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexPosBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, mesh.vertices, gl.STATIC_DRAW);
+    gl.vertexAttribPointer(program.vertexPosAttrib, 3, gl.FLOAT, false, 16, 0);
+
+    gl.drawElements(gl.TRIANGLES, mesh.numberOfFaces * 3, gl.UNSIGNED_SHORT, 0);
+  }
+
+  console.timeEnd('drawMeshes4');
+
+}
+
+function updateMeshes3(meshes) {
+  console.time('updateMeshes3');
+  console.log('numberOfVertices: ' + meshes.numberOfVertices);
+  console.log('numberOfFaces: ' + meshes.numberOfFaces);
+
+  var vertices = meshes.vertices;
+  var colors = meshes.colors;
+  var faces = meshes.faces;
+  var blockMeshes = meshes.blockMeshes;
+
+  var updated = 0;
+  for (var j = 0; j < blockMeshes.length; ++j) {
+    var blockMesh = blockMeshes[j];
+    if (blockMesh.numVertices == 0 || blockMesh.numFaces == 0)
+      continue;
+    if (blockMesh.meshId in currentMeshes) {
+      delete currentMeshes[blockMesh.meshId];
+      updated++;
+    }
+
+    const floatsPerVertex = 4;
+    const uint16PerFace = 3;
+    var verticesBuffer = vertices.slice(blockMesh.vertexStartIndex, blockMesh.vertexStartIndex + blockMesh.numVertices * floatsPerVertex);
+    var facesBuffer = faces.slice(blockMesh.faceStartIndex, blockMesh.faceStartIndex + (blockMesh.numFaces - 1)* uint16PerFace);
+
+    currentMeshes[blockMesh.meshId] = {
+      numberOfVertices: blockMesh.numVertices,
+      vertices: verticesBuffer,
+      numberOfFaces: blockMesh.numFaces - 1,
+      faces: facesBuffer,
+    };
+  }
+
+  console.log('blockMeshes.length: ' + blockMeshes.length);
+  console.log('updated blockMeshes: ' + updated);
+
+  console.timeEnd('updateMeshes3');
+
+  setTimeout(mergeMeshes3, 0);
+}
+
+function updateMeshes4(meshes) {
+  console.time('updateMeshes4');
+  console.log('numberOfVertices: ' + meshes.numberOfVertices);
+  console.log('numberOfFaces: ' + meshes.numberOfFaces);
+
+  var vertices = meshes.vertices;
+  var colors = meshes.colors;
+  var faces = meshes.faces;
+  var blockMeshes = meshes.blockMeshes;
+
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  var indexBuffer = gl.createBuffer();
+
+  var vertexPosBuffer = gl.createBuffer();
+  
+  var vs = 'attribute vec3 pos;' +
+         'void main() { gl_Position = vec4(pos, 1); }';
+  var fs = 'precision mediump float;' +
+       'void main() { gl_FragColor = vec4(0.8,0.8,0.8,1); }';
+  var program = createProgram(vs,fs);
+  
+  program.vertexPosAttrib = gl.getAttribLocation(program, 'pos');
+
+  var updated = 0;
+  for (var j = 0; j < blockMeshes.length; ++j) {
+    var blockMesh = blockMeshes[j];
+    if (blockMesh.numVertices == 0 || blockMesh.numFaces == 0)
+      continue;
+    if (blockMesh.meshId in currentMeshes) {
+      delete currentMeshes[blockMesh.meshId];
+      updated++;
+    }
+
+    const floatsPerVertex = 4;
+    const uint16PerFace = 3;
+    var verticesBuffer = vertices.slice(blockMesh.vertexStartIndex, blockMesh.vertexStartIndex + blockMesh.numVertices * floatsPerVertex);
+    var facesBuffer = faces.slice(blockMesh.faceStartIndex, blockMesh.faceStartIndex + blockMesh.numFaces * uint16PerFace);
+
+    currentMeshes[blockMesh.meshId] = {
+      numberOfVertices: blockMesh.numVertices,
+      vertices: verticesBuffer,
+      numberOfFaces: blockMesh.numFaces,
+      faces: facesBuffer,
+    };
+    
+    gl.useProgram(program);
+    gl.enableVertexAttribArray(program.vertexPosAttrib);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, facesBuffer, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexPosBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, verticesBuffer, gl.STATIC_DRAW);
+    gl.vertexAttribPointer(program.vertexPosAttrib, 3, gl.FLOAT, false, 16, 0);
+
+    gl.drawElements(gl.LINE_LOOP, blockMesh.numFaces * 3, gl.UNSIGNED_SHORT, 0);
+  }
+
+  console.log('blockMeshes.length: ' + blockMeshes.length);
+  console.log('updated blockMeshes: ' + updated);
+
+  console.timeEnd('updateMeshes4');
+}
+
 
 function updateMeshes(meshes) {
   console.time('updateMeshes');

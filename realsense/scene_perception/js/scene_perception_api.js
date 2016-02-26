@@ -55,6 +55,7 @@ var ScenePerception = function(objectId) {
     // NumFaces: int32
     const BYTES_PER_INT = 4;
     const BYTES_PER_FLOAT = 4;
+    const BYTES_PER_SHORT = 2;
     var int32Array = new Int32Array(data, 0, 4);
     var numberOfBlockMesh = int32Array[1];
     var numberOfVertices = int32Array[2];
@@ -82,10 +83,10 @@ var ScenePerception = function(objectId) {
                          numberOfVertices * 4);
     var facesOffset = verticesOffset + numberOfVertices * 4 * BYTES_PER_FLOAT;
     var faces =
-        new Int32Array(data,
+        new Uint16Array(data,
                        facesOffset,
                        numberOfFaces * 3);
-    var colorsOffset = facesOffset + numberOfFaces * 3 * BYTES_PER_FLOAT;
+    var colorsOffset = facesOffset + numberOfFaces * 3 * BYTES_PER_SHORT;
     var colors =
         new Uint8Array(data,
                        colorsOffset,

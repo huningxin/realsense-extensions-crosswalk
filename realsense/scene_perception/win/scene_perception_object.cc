@@ -984,7 +984,7 @@ void ScenePerceptionObject::DoMeshingUpdateOnMeshingThread(
   const int blockmesh_int_length = 5;
   const int blockmesh_byte_length = blockmesh_int_length * sizeof(int);
   const int vertices_byte_length = num_of_vertices * 4 * sizeof(float);
-  const int faces_byte_length = num_of_faces * 3 * sizeof(int);
+  const int faces_byte_length = num_of_faces * 3 * sizeof(unsigned short);
   const int colors_byte_length = num_of_vertices * 3 * sizeof(unsigned char);
 
   meshing_data_message_size_ =
@@ -1017,6 +1017,17 @@ void ScenePerceptionObject::DoMeshingUpdateOnMeshingThread(
         block_mesh_data->faceStartIndex;
     block_meshes_array[i * blockmesh_int_length + 4] =
         block_mesh_data->numFaces;
+
+    if((block_mesh_data->numVertices > 0) && (block_mesh_data->numFaces > 0))
+    {
+      // face indices relative to vertex buffer
+      for(int j = 0; j < block_mesh_data->numFaces * 3; j++)
+      {
+        faces[block_mesh_data->faceStartIndex + j] -= block_mesh_data->vertexStartIndex / 4;
+      }
+
+      // TODO: normal buffer
+    }
   }
 
   char* vertices_offset = block_meshes_offset
@@ -1025,7 +1036,10 @@ void ScenePerceptionObject::DoMeshingUpdateOnMeshingThread(
          vertices_byte_length);
 
   char* faces_offset = vertices_offset + vertices_byte_length;
-  memcpy(faces_offset, reinterpret_cast<char*>(faces), faces_byte_length);
+  unsigned short* faces_array = reinterpret_cast<unsigned short*>(faces_offset);
+  for (int i = 0; i < num_of_faces * 3; i++) {
+    faces_array[i] = faces[i];
+  }
 
   char* colors_offset = faces_offset + faces_byte_length;
   memcpy(colors_offset, reinterpret_cast<char*>(colors), colors_byte_length);
