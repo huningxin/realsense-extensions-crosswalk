@@ -194,7 +194,7 @@ function main() {
       var func = updateMeshes3.bind(thisObj, meshes);
       // do the updateMeshes asynchronously
       setTimeout(func, 0);
-    }, function(e) {/*console.log(e + ' ' + Date.now());*/});
+    }, function(e) {console.log(e + ' ' + Date.now());});
   };
 
   var meshesCreated = false;
@@ -277,6 +277,7 @@ function main() {
     }, function(e) {console.log(e);});
   };
 
+/*
   volumePreviewRadio.addEventListener('click', function(e) {
     if (volumePreviewRadio.checked) {
       meshingRender.style.display = 'none';
@@ -290,7 +291,7 @@ function main() {
       volumePreviewRender.style.display = 'none';
     }
   }, false);
-
+*/
   /*
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setClearColor(0x000000, 1);
@@ -548,7 +549,7 @@ function drawMeshes3() {
 
   program.vertexColorAttribute = gl.getAttribLocation(program, "aVertexColor");
   gl.enableVertexAttribArray(program.vertexColorAttribute);
-  
+
   gl.useProgram(program);
 
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);

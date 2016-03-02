@@ -941,11 +941,11 @@ void ScenePerceptionObject::DoGetMeshData(
     MeshData data;
     info->PostResult(GetMeshData::Results::Create(
         data, std::string("Reconstruction is not updated.")));
-  } else if (!(base::TimeTicks::Now() - last_meshing_time_ > base::TimeDelta::FromMilliseconds(1000))) {
+  }/* else if (!(base::TimeTicks::Now() - last_meshing_time_ > base::TimeDelta::FromMilliseconds(1000))) {
     MeshData data;
     info->PostResult(GetMeshData::Results::Create(
         data, std::string("It is less than 1000ms after previous meshing.")));
-  } else {
+  } */else {
     doing_meshing_updating_ = true;
     DLOG(INFO) << "Request meshing";
     // Start the meshing thread if needed.
