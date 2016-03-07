@@ -50,6 +50,8 @@ var sp;
 
 var gl;
 
+var cameraMatrix, viewMatrix, modelMatrix;
+
 function ConvertDepthToRGBUsingHistogram(
     depthImage, nearColor, farColor, rgbImage) {
   var imageSize = depth_size.width * depth_size.height;
@@ -167,6 +169,8 @@ function main() {
 
     //Update the left render view.
     updateSampleView();
+
+    updateViewMatrix(e.data.cameraPose);
 
     //Update right render view.
     if (volumePreviewRender.style.display != 'none') {
@@ -298,12 +302,6 @@ function main() {
   renderer.setSize(640, 480);
   meshingRender.appendChild(renderer.domElement);
 
-  stats = new Stats();
-  stats.domElement.style.position = 'absolute';
-  stats.domElement.style.top = '0px';
-  stats.domElement.style.right = '0px';
-  meshingRender.appendChild(stats.domElement);
-
   camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 1000);
   camera.position.set(0, 0, 3);
   camera.lookAt(new THREE.Vector3(0, 0, 0));
@@ -345,10 +343,16 @@ function main() {
 
   animate();
   */
-  gl = meshingCanvas.getContext('webgl');
 
-  gl.clearColor(0,0,0,1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  init3();
+
+  stats = new Stats();
+  stats.domElement.style.position = 'absolute';
+  stats.domElement.style.top = '0px';
+  stats.domElement.style.right = '0px';
+  meshingRender.appendChild(stats.domElement);
+
+  animate3();
 }
 
 function removeAllMeshes() {
@@ -464,7 +468,7 @@ function drawMeshes() {
 }
 
 var currentMeshes = {};
-var meshToDraw = {vertices: null, numberOfVertices: 0};
+var meshToDraw = {vertices: null, numberOfVertices: 0, faces: null, numberOfFaces: 0};
 
 function mergeMeshes2() {
   console.time('mergeMeshes2');
@@ -526,29 +530,65 @@ function updateMeshes2(meshes) {
   console.timeEnd('updateMeshes2');
 }
 
-function drawMeshes3() {
-  console.time('drawMeshes3');
+var program;
+
+function updateViewMatrix(cameraPose) {
+  cameraMatrix.set(cameraPose[0], cameraPose[1], cameraPose[2], cameraPose[3],
+                  cameraPose[4], cameraPose[5], cameraPose[6], cameraPose[7],
+                  cameraPose[8], cameraPose[9], cameraPose[10], cameraPose[11],
+                  0.0, 0.0, 0.0, 1.0);
+  //var movePose = new THREE.Matrix4();
+  //movePose.set(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, -4.0, 0.0, 0.0, 0.0, 1.0);
+  //cameraMatrix.multiply(movePose);
+  var inverseMatrix = new THREE.Matrix4();
+  inverseMatrix.getInverse(cameraMatrix);
+  modelMatrix = new THREE.Matrix4();
+  modelMatrix.set(1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
+  modelMatrix.multiply(inverseMatrix);
+  modelMatrix.transpose();
+}
+
+function init3() {
+  gl = meshingCanvas.getContext('webgl');
+
   gl.clearColor(0,0,0,1);
   gl.clear(gl.COLOR_BUFFER_BIT);
+
+  var vs = 'attribute vec3 pos;' +
+         'attribute vec3 aVertexColor;' +
+         'uniform mat4 uVMatrix;' +
+         'varying vec3 vColor;' + 
+         'void main() { gl_Position = uVMatrix * vec4(pos, 1); vColor = aVertexColor;}';
+  var fs = 'precision mediump float;' +
+       'varying vec3 vColor;' +
+       'void main() { gl_FragColor = vec4(vColor, 1); }';
+  program = createProgram(vs,fs);
+
+  cameraMatrix = new THREE.Matrix4();
+  viewMatrix = new THREE.Matrix4();
+  modelMatrix = new THREE.Matrix4(); 
+}
+
+function drawMeshes3() {
+  //console.time('drawMeshes3');
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  if (meshToDraw.numberOfFaces == 0) {
+    return;
+  }
 
   var indexBuffer = gl.createBuffer();
   var vertexPosBuffer = gl.createBuffer();
   var vertexColorBuffer = gl.createBuffer();
-  
-  var vs = 'attribute vec3 pos;' +
-         'attribute vec3 aVertexColor;' +
-         'varying vec3 vColor;' + 
-         'void main() { gl_Position = vec4(pos, 1); vColor = aVertexColor;}';
-  var fs = 'precision mediump float;' +
-       'varying vec3 vColor;' +
-       'void main() { gl_FragColor = vec4(vColor, 1); }';
-  var program = createProgram(vs,fs);
   
   program.vertexPosAttrib = gl.getAttribLocation(program, 'pos');
   gl.enableVertexAttribArray(program.vertexPosAttrib);
 
   program.vertexColorAttribute = gl.getAttribLocation(program, "aVertexColor");
   gl.enableVertexAttribArray(program.vertexColorAttribute);
+
+  program.vMatrixUniform = gl.getUniformLocation(program, 'uVMatrix');
 
   gl.useProgram(program);
 
@@ -567,10 +607,12 @@ function drawMeshes3() {
   gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer);
   gl.vertexAttribPointer(program.vertexColorAttribute, 3, gl.UNSIGNED_BYTE, true, 0, 0);
 
+  gl.uniformMatrix4fv(program.vMatrixUniform, false, modelMatrix.elements);
+
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
   gl.drawElements(gl.TRIANGLES, meshToDraw.numberOfFaces * 3, gl.UNSIGNED_SHORT, 0);
 
-  console.timeEnd('drawMeshes3');
+  //console.timeEnd('drawMeshes3');
 }
 
 function mergeMeshes3() {
@@ -605,8 +647,6 @@ function mergeMeshes3() {
   }
 
   console.timeEnd('mergeMeshes3');
-
-  setTimeout(drawMeshes3, 0);
 }
 
 function drawMeshes4() {
@@ -623,8 +663,9 @@ function drawMeshes4() {
   
   var vs = 'attribute vec3 pos;' +
          'attribute vec3 aVertexColor;' +
+         'uniform mat4 uVMatrix;' +
          'varying vec3 vColor;' + 
-         'void main() { gl_Position = vec4(pos, 1); vColor = aVertexColor;}';
+         'void main() { gl_Position = uMMatrix * vec4(pos, 1); vColor = aVertexColor;}';
   var fs = 'precision mediump float;' +
        'varying vec3 vColor;' +
        'void main() { gl_FragColor = vec4(vColor, 1); }';
@@ -635,6 +676,8 @@ function drawMeshes4() {
 
   program.vertexColorAttribute = gl.getAttribLocation(program, "aVertexColor");
   gl.enableVertexAttribArray(program.vertexColorAttribute);
+
+  program.vMatrixUniform = gl.getUniformLocation(program, 'uVMatrix');
 
   gl.useProgram(program);
 
@@ -855,4 +898,10 @@ function animate() {
   stats.update();
 }
 
+function animate3() {
+  requestAnimationFrame(animate3);
 
+  drawMeshes3();
+
+  stats.update();
+}
