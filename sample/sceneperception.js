@@ -50,7 +50,7 @@ var sp;
 
 var gl;
 
-var cameraMatrix, viewMatrix, modelMatrix;
+var cameraMatrix, viewMatrix, modelMatrix, renderMatrix;
 
 function ConvertDepthToRGBUsingHistogram(
     depthImage, nearColor, farColor, rgbImage) {
@@ -172,12 +172,28 @@ function main() {
 
     updateViewMatrix(e.data.cameraPose);
 
+    var cameraPose = e.data.cameraPose;
+    renderMatrix.set(
+      cameraPose[0], cameraPose[1], cameraPose[2], cameraPose[3],
+      cameraPose[4], cameraPose[5], cameraPose[6], cameraPose[7],
+      cameraPose[8], cameraPose[9], cameraPose[10], cameraPose[11],
+      0.0, 0.0, 0.0, 1.0);
+
+    var movePose = new THREE.Matrix4();
+    movePose.set(
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, -1.0,
+        0.0, 0.0, 0.0, 1.0);
+    renderMatrix.multiply(movePose);
+    renderMatrix.transpose();
+
     //Update right render view.
     if (volumePreviewRender.style.display != 'none') {
       if (getting_volumePreview_image)
         return;
       getting_volumePreview_image = true;
-      sp.queryVolumePreview(e.data.cameraPose).then(function(volumePreview) {
+      sp.queryVolumePreview(Array.from(renderMatrix.elements)).then(function(volumePreview) {
         volumePreview_image_data.data.set(volumePreview.data);
         volumePreview_context.putImageData(volumePreview_image_data, 0, 0);
         getting_volumePreview_image = false;
@@ -533,19 +549,55 @@ function updateMeshes2(meshes) {
 var program;
 
 function updateViewMatrix(cameraPose) {
+  /*
   cameraMatrix.set(cameraPose[0], cameraPose[1], cameraPose[2], cameraPose[3],
                   cameraPose[4], cameraPose[5], cameraPose[6], cameraPose[7],
                   cameraPose[8], cameraPose[9], cameraPose[10], cameraPose[11],
                   0.0, 0.0, 0.0, 1.0);
-  //var movePose = new THREE.Matrix4();
-  //movePose.set(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, -4.0, 0.0, 0.0, 0.0, 1.0);
-  //cameraMatrix.multiply(movePose);
+  var movePose = new THREE.Matrix4();
+  movePose.set(
+      1.0, 0.0, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0,
+      0.0, 0.0, 1.0, 0.0,
+      0.0, 0.0, 0.0, 1.0);
+  cameraMatrix.multiply(movePose);
   var inverseMatrix = new THREE.Matrix4();
   inverseMatrix.getInverse(cameraMatrix);
   modelMatrix = new THREE.Matrix4();
   modelMatrix.set(1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
   modelMatrix.multiply(inverseMatrix);
   modelMatrix.transpose();
+  */
+  cameraMatrix.set(
+      cameraPose[0], cameraPose[1], cameraPose[2], cameraPose[3],
+      cameraPose[4], cameraPose[5], cameraPose[6], cameraPose[7],
+      cameraPose[8], cameraPose[9], cameraPose[10], cameraPose[11],
+      0.0, 0.0, 0.0, 1.0);
+  var move = new THREE.Matrix4();
+  move.set(
+      1.0, 0.0, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0,
+      0.0, 0.0, 1.0, 1.0,
+      0.0, 0.0, 0.0, 1.0);
+  cameraMatrix.multiply(move);
+  var rot = new THREE.Matrix4();
+  rot.set(
+      1.0, 0.0, 0.0, 0.0,
+      0.0, -1.0, 0.0, 0.0,
+      0.0, 0.0, -1.0, 0.0,
+      0.0, 0.0, 0.0, 1.0);
+  cameraMatrix.multiply(rot);
+  cameraMatrix.transpose();
+}
+
+function setProjectionMatrix(cameraIntrinsic) {
+  /*
+  projectionMatrix.set(1.94410229, 0.0, 0.0, 0.0,
+   0.0, 2.59213638, 0.0, 0.0,
+   0.00312501192, 0.0658521652, -1.00002003, -1.0,
+   0.0, 0.0, -0.0200002007, 0.0);
+*/
+  projectionMatrix.identity();
 }
 
 function init3() {
@@ -566,7 +618,10 @@ function init3() {
 
   cameraMatrix = new THREE.Matrix4();
   viewMatrix = new THREE.Matrix4();
-  modelMatrix = new THREE.Matrix4(); 
+  modelMatrix = new THREE.Matrix4();
+  renderMatrix = new THREE.Matrix4();
+  projectionMatrix = new THREE.Matrix4();
+  setProjectionMatrix();
 }
 
 function drawMeshes3() {
@@ -589,6 +644,7 @@ function drawMeshes3() {
   gl.enableVertexAttribArray(program.vertexColorAttribute);
 
   program.vMatrixUniform = gl.getUniformLocation(program, 'uVMatrix');
+  program.pMatrixUniform = gl.getUniformLocation(program, 'uPMatrix');
 
   gl.useProgram(program);
 
@@ -607,7 +663,8 @@ function drawMeshes3() {
   gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer);
   gl.vertexAttribPointer(program.vertexColorAttribute, 3, gl.UNSIGNED_BYTE, true, 0, 0);
 
-  gl.uniformMatrix4fv(program.vMatrixUniform, false, modelMatrix.elements);
+  gl.uniformMatrix4fv(program.vMatrixUniform, false, cameraMatrix.elements);
+  gl.uniformMatrix4fv(program.pMatrixUniform, false, projectionMatrix.elements);
 
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
   gl.drawElements(gl.TRIANGLES, meshToDraw.numberOfFaces * 3, gl.UNSIGNED_SHORT, 0);
