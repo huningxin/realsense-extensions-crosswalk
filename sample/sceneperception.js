@@ -605,7 +605,7 @@ function updateModelMatrix() {
   modelMatrix.multiply(rotYMatrix);
 
   var rotZMatrix = new THREE.Matrix4();
-  rotZMatrix.makeRotationZ(rotZ * Math.PI / 180);
+  rotZMatrix.makeRotationZ(180 * Math.PI / 180);
   modelMatrix.multiply(rotZMatrix);
   
   var translationMatrix = new THREE.Matrix4();
@@ -613,9 +613,9 @@ function updateModelMatrix() {
   modelMatrix.multiply(translationMatrix);
 
   cameraMatrix.set(
-    cameraPose[0], -cameraPose[1], -cameraPose[2], cameraPose[3],
-    cameraPose[4], -cameraPose[5], -cameraPose[6], cameraPose[7],
-    cameraPose[8], -cameraPose[9], -cameraPose[10], cameraPose[11],
+    -cameraPose[0], cameraPose[1], -cameraPose[2], cameraPose[3],
+    -cameraPose[4], cameraPose[5], -cameraPose[6], cameraPose[7],
+    -cameraPose[8], cameraPose[9], -cameraPose[10], -cameraPose[11],
     0, 0, 0, 1.0);
 
 /*
@@ -631,19 +631,38 @@ function updateModelMatrix() {
   cameraMatrix.transpose();
   viewMatrix.getInverse(cameraMatrix);
 
-  modelMatrix.multiply(viewMatrix);
+  modelMatrix.multiply(cameraMatrix);
 
   //modelMatrix.transpose();
 }
 
+var fov = 2 * Math.atan((320 - 159)/311) / (Math.PI / 180);
+console.log('fov: ' + fov);
+function updateFov(value) {
+  fov = value;
+  setProjectionMatrix();
+}
+
 function setProjectionMatrix(cameraIntrinsic) {
+  
   /*
-  projectionMatrix.set(1.94410229, 0.0, 0.0, 0.0,
-   0.0, 2.59213638, 0.0, 0.0,
-   0.00312501192, 0.0658521652, -1.00002003, -1.0,
-   0.0, 0.0, -0.0200002007, 0.0);
+  projectionMatrix.set(
+     1.94410229, 0.0, 0.0, 0.0,
+     0.0, 2.59213638, 0.0, 0.0,
+     0.00312501192, 0.0658521652, -1.00002003, -1.0,
+     0.0, 0.0, -0.0200002007, 0.0);
 */
-  projectionMatrix.identity();
+/*
+  projectionMatrix.set(
+     1.94410229, 0.0, 0.0, 0.0,
+     0.0, 2.59213638, 0.0, 0.0,
+     0.0, 0.0, -1.00002003, -1.0,
+     0.0, 0.0, -0.0200002007, 0.0);
+
+  projectionMatrix.transpose();
+*/
+  //projectionMatrix.identity();
+  projectionMatrix.makePerspective(fov, 320/240, 0.001, 1000);
 }
 
 function init3() {
@@ -655,8 +674,9 @@ function init3() {
   var vs = 'attribute vec3 pos;' +
          'attribute vec3 aVertexColor;' +
          'uniform mat4 uMMatrix;' +
+         'uniform mat4 uPMatrix;' +
          'varying vec3 vColor;' + 
-         'void main() { gl_Position = uMMatrix * vec4(pos.x, pos.y, -pos.z, 1); vColor = aVertexColor;}';
+         'void main() { gl_Position = uPMatrix * uMMatrix * vec4(pos.x, pos.y, pos.z, 1); vColor = aVertexColor;}';
   var fs = 'precision mediump float;' +
        'varying vec3 vColor;' +
        'void main() { gl_FragColor = vec4(vColor, 1); }';
@@ -695,7 +715,7 @@ function drawMeshes3() {
   program.vertexColorAttribute = gl.getAttribLocation(program, "aVertexColor");
   gl.enableVertexAttribArray(program.vertexColorAttribute);
 
-  program.vMatrixUniform = gl.getUniformLocation(program, 'uMMatrix');
+  program.uMatrixUniform = gl.getUniformLocation(program, 'uMMatrix');
   program.pMatrixUniform = gl.getUniformLocation(program, 'uPMatrix');
 
   gl.useProgram(program);
@@ -715,8 +735,8 @@ function drawMeshes3() {
   gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer);
   gl.vertexAttribPointer(program.vertexColorAttribute, 3, gl.UNSIGNED_BYTE, true, 0, 0);
 
-  gl.uniformMatrix4fv(program.vMatrixUniform, false, modelMatrix.elements);
-  //gl.uniformMatrix4fv(program.pMatrixUniform, false, projectionMatrix.elements);
+  gl.uniformMatrix4fv(program.uMatrixUniform, false, modelMatrix.elements);
+  gl.uniformMatrix4fv(program.pMatrixUniform, false, projectionMatrix.elements);
 
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
   gl.drawElements(gl.TRIANGLES, meshToDraw.numberOfFaces * 3, gl.UNSIGNED_SHORT, 0);
