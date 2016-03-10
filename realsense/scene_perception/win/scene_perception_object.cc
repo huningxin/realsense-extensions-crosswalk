@@ -341,6 +341,8 @@ void ScenePerceptionObject::OnCreateAndStartPipeline(
     StopSceneManagerThread();
     return;
   }
+  //session_->SetCoordinateSystem(PXCSession::COORDINATE_SYSTEM_REAR_DEFAULT);
+
   sense_manager_ = session_->CreateSenseManager();
   if (!sense_manager_) {
     scoped_ptr<base::ListValue> error(new base::ListValue());

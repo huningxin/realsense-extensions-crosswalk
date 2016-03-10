@@ -24,6 +24,12 @@
     <button id='stopSP'>StopSP</button>
     <button id='toggleReconstruction'>Toggle Reconstruction</button>
     <button id='saveMesh'>Save Mesh</button>
+    <input type="range" id="RotX" min="-180" max="180" value="0" step="1" class="slider-with" oninput="updateRotX(value)">
+    <input type="range" id="RotY" min="-180" max="180" value="0" step="1" class="slider-with" oninput="updateRotY(value)">
+    <input type="range" id="RotZ" min="-180" max="180" value="0" step="1" class="slider-with" oninput="updateRotZ(value)">
+    <input type="range" id="transX" min="-1" max="1" value="0" step="0.1" class="slider-with" oninput="updateTransX(value)">
+    <input type="range" id="transY" min="-1" max="1" value="0" step="0.1" class="slider-with" oninput="updateTransY(value)">
+    <input type="range" id="transZ" min="-1" max="1" value="0" step="0.1" class="slider-with" oninput="updateTransZ(value)">
   </div>
   <div id='color_container' style='position: absolute; left: 10px; top: 90px;'>
     <canvas id='color' width='320' height='240'></canvas>
@@ -42,6 +48,7 @@
       <canvas id='meshingCavans' width='640' height='480' style='width:640px; height:480px;'></canvas>
     </div>
   </div>
+  
   </body>
   <script src='libs/three.js'></script>
   <script src='libs/TrackballControls.js'></script>

@@ -170,9 +170,10 @@ function main() {
     //Update the left render view.
     updateSampleView();
 
-    updateViewMatrix(e.data.cameraPose);
+    cameraPose = e.data.cameraPose;
 
-    var cameraPose = e.data.cameraPose;
+    cameraPose = e.data.cameraPose;
+
     renderMatrix.set(
       cameraPose[0], cameraPose[1], cameraPose[2], cameraPose[3],
       cameraPose[4], cameraPose[5], cameraPose[6], cameraPose[7],
@@ -222,7 +223,7 @@ function main() {
   initButton.onclick = function(e) {
     sampleFlowController.reset();
     var initConfig = {
-      useOpenCVCoordinateSystem: true,
+      useOpenCVCoordinateSystem: false,
       colorCaptureSize: color_size,
       depthCaptureSize: depth_size,
       captureFramerate: unifiedFrameRate
@@ -548,7 +549,31 @@ function updateMeshes2(meshes) {
 
 var program;
 
-function updateViewMatrix(cameraPose) {
+var rotX = 0, rotY = 0, rotZ = 0;
+function updateRotX(value) {
+  rotX = value;
+}
+function updateRotY(value) {
+  rotY = value;
+}
+function updateRotZ(value) {
+  rotZ = value;
+}
+
+var transX = 0, transY = 0, transZ = 0;
+function updateTransX(value) {
+  transX = value;
+}
+function updateTransY(value) {
+  transY = value;
+}
+function updateTransZ(value) {
+  transZ = value;
+}
+
+var cameraPose = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+
+function updateModelMatrix() {
   /*
   cameraMatrix.set(cameraPose[0], cameraPose[1], cameraPose[2], cameraPose[3],
                   cameraPose[4], cameraPose[5], cameraPose[6], cameraPose[7],
@@ -568,26 +593,47 @@ function updateViewMatrix(cameraPose) {
   modelMatrix.multiply(inverseMatrix);
   modelMatrix.transpose();
   */
+
+  modelMatrix.identity();
+
+  var rotXMatrix = new THREE.Matrix4();
+  rotXMatrix.makeRotationX(rotX * Math.PI / 180);
+  modelMatrix.multiply(rotXMatrix);
+
+  var rotYMatrix = new THREE.Matrix4();
+  rotYMatrix.makeRotationY(rotY * Math.PI / 180);
+  modelMatrix.multiply(rotYMatrix);
+
+  var rotZMatrix = new THREE.Matrix4();
+  rotZMatrix.makeRotationZ(rotZ * Math.PI / 180);
+  modelMatrix.multiply(rotZMatrix);
+  
+  var translationMatrix = new THREE.Matrix4();
+  translationMatrix.makeTranslation(transX, transY, transZ);
+  modelMatrix.multiply(translationMatrix);
+
   cameraMatrix.set(
-      cameraPose[0], cameraPose[1], cameraPose[2], cameraPose[3],
-      cameraPose[4], cameraPose[5], cameraPose[6], cameraPose[7],
-      cameraPose[8], cameraPose[9], cameraPose[10], cameraPose[11],
-      0.0, 0.0, 0.0, 1.0);
-  var move = new THREE.Matrix4();
-  move.set(
-      1.0, 0.0, 0.0, 0.0,
-      0.0, 1.0, 0.0, 0.0,
-      0.0, 0.0, 1.0, 1.0,
-      0.0, 0.0, 0.0, 1.0);
-  cameraMatrix.multiply(move);
-  var rot = new THREE.Matrix4();
-  rot.set(
-      1.0, 0.0, 0.0, 0.0,
-      0.0, -1.0, 0.0, 0.0,
-      0.0, 0.0, -1.0, 0.0,
-      0.0, 0.0, 0.0, 1.0);
-  cameraMatrix.multiply(rot);
+    cameraPose[0], -cameraPose[1], -cameraPose[2], cameraPose[3],
+    cameraPose[4], -cameraPose[5], -cameraPose[6], cameraPose[7],
+    cameraPose[8], -cameraPose[9], -cameraPose[10], cameraPose[11],
+    0, 0, 0, 1.0);
+
+/*
+  cameraMatrix.set(
+    1, 0, 0, cameraPose[3],
+    0, 1, 0, cameraPose[7],
+    0, 0, 1, cameraPose[11],
+    0, 0, 0, 1.0);
+*/
+  
+  //cameraMatrix.makeTranslation(cameraPose[3], cameraPose[7], cameraPose[11]);
+
   cameraMatrix.transpose();
+  viewMatrix.getInverse(cameraMatrix);
+
+  modelMatrix.multiply(viewMatrix);
+
+  //modelMatrix.transpose();
 }
 
 function setProjectionMatrix(cameraIntrinsic) {
@@ -604,17 +650,20 @@ function init3() {
   gl = meshingCanvas.getContext('webgl');
 
   gl.clearColor(0,0,0,1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
   var vs = 'attribute vec3 pos;' +
          'attribute vec3 aVertexColor;' +
-         'uniform mat4 uVMatrix;' +
+         'uniform mat4 uMMatrix;' +
          'varying vec3 vColor;' + 
-         'void main() { gl_Position = uVMatrix * vec4(pos, 1); vColor = aVertexColor;}';
+         'void main() { gl_Position = uMMatrix * vec4(pos.x, pos.y, -pos.z, 1); vColor = aVertexColor;}';
   var fs = 'precision mediump float;' +
        'varying vec3 vColor;' +
        'void main() { gl_FragColor = vec4(vColor, 1); }';
   program = createProgram(vs,fs);
+
+  //gl.enable(gl.CULL_FACE);
+  gl.enable(gl.DEPTH_TEST);
 
   cameraMatrix = new THREE.Matrix4();
   viewMatrix = new THREE.Matrix4();
@@ -626,8 +675,11 @@ function init3() {
 
 function drawMeshes3() {
   //console.time('drawMeshes3');
+
+  updateModelMatrix();
+
   gl.clearColor(0,0,0,1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
   if (meshToDraw.numberOfFaces == 0) {
     return;
@@ -643,7 +695,7 @@ function drawMeshes3() {
   program.vertexColorAttribute = gl.getAttribLocation(program, "aVertexColor");
   gl.enableVertexAttribArray(program.vertexColorAttribute);
 
-  program.vMatrixUniform = gl.getUniformLocation(program, 'uVMatrix');
+  program.vMatrixUniform = gl.getUniformLocation(program, 'uMMatrix');
   program.pMatrixUniform = gl.getUniformLocation(program, 'uPMatrix');
 
   gl.useProgram(program);
@@ -663,8 +715,8 @@ function drawMeshes3() {
   gl.bindBuffer(gl.ARRAY_BUFFER, vertexColorBuffer);
   gl.vertexAttribPointer(program.vertexColorAttribute, 3, gl.UNSIGNED_BYTE, true, 0, 0);
 
-  gl.uniformMatrix4fv(program.vMatrixUniform, false, cameraMatrix.elements);
-  gl.uniformMatrix4fv(program.pMatrixUniform, false, projectionMatrix.elements);
+  gl.uniformMatrix4fv(program.vMatrixUniform, false, modelMatrix.elements);
+  //gl.uniformMatrix4fv(program.pMatrixUniform, false, projectionMatrix.elements);
 
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
   gl.drawElements(gl.TRIANGLES, meshToDraw.numberOfFaces * 3, gl.UNSIGNED_SHORT, 0);
@@ -720,7 +772,7 @@ function drawMeshes4() {
   
   var vs = 'attribute vec3 pos;' +
          'attribute vec3 aVertexColor;' +
-         'uniform mat4 uVMatrix;' +
+         'uniform mat4 uMMatrix;' +
          'varying vec3 vColor;' + 
          'void main() { gl_Position = uMMatrix * vec4(pos, 1); vColor = aVertexColor;}';
   var fs = 'precision mediump float;' +
@@ -734,7 +786,7 @@ function drawMeshes4() {
   program.vertexColorAttribute = gl.getAttribLocation(program, "aVertexColor");
   gl.enableVertexAttribArray(program.vertexColorAttribute);
 
-  program.vMatrixUniform = gl.getUniformLocation(program, 'uVMatrix');
+  program.vMatrixUniform = gl.getUniformLocation(program, 'uMMatrix');
 
   gl.useProgram(program);
 
