@@ -112,6 +112,8 @@ function gotDevices(deviceInfos) {
 }
 
 function main() {
+  // Trigger the user permission prompt
+  navigator.mediaDevices.getUserMedia({video: true});
   navigator.mediaDevices.enumerateDevices().then(gotDevices, errorCallback);
 }
 
