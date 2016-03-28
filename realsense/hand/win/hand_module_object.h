@@ -1,4 +1,4 @@
-// Copyright 2015 Intel Corporation. All rights reserved.
+// Copyright 2016 Intel Corporation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,6 +21,7 @@ namespace realsense {
 namespace hand {
 
 using realsense::jsapi::common::ErrorCode;
+using xwalk::common::XWalkExtensionFunctionInfo;
 
 class HandModuleObject
     : public xwalk::common::EventTarget {
@@ -33,62 +34,58 @@ class HandModuleObject
   void StopEvent(const std::string& type) override;
 
  private:
+  // Message handlers.
+  void OnInit(
+     scoped_ptr<XWalkExtensionFunctionInfo> info);
   void OnStart(
-      scoped_ptr<xwalk::common::XWalkExtensionFunctionInfo> info);
+      scoped_ptr<XWalkExtensionFunctionInfo> info);
   void OnStop(
-      scoped_ptr<xwalk::common::XWalkExtensionFunctionInfo> info);
-  void OnGetSample(
-      scoped_ptr<xwalk::common::XWalkExtensionFunctionInfo> info);
-  void OnGetOutput(
-      scoped_ptr<xwalk::common::XWalkExtensionFunctionInfo> info);
+      scoped_ptr<XWalkExtensionFunctionInfo> info);
+  void OnRelease(
+    scoped_ptr<XWalkExtensionFunctionInfo> info);
+  void OnGetLatestSample(
+      scoped_ptr<XWalkExtensionFunctionInfo> info);
+  void OnGetLatestHandData(
+      scoped_ptr<XWalkExtensionFunctionInfo> info);
 
-  // Run on hand_module_thread_
-  void OnStartPipeline(
-      scoped_ptr<xwalk::common::XWalkExtensionFunctionInfo> info);
-  void OnRunPipeline();
-  void OnStopPipeline(
-      scoped_ptr<xwalk::common::XWalkExtensionFunctionInfo> info);
-  void OnGetSampleOnPipeline(
-      scoped_ptr<xwalk::common::XWalkExtensionFunctionInfo> info);
-  void OnGetOutputOnPipeline(
-      scoped_ptr<xwalk::common::XWalkExtensionFunctionInfo> info);
+  // Execute the pipeline loop.
+  void RunPipeline();
 
-  // Run on hand extension thread
-  bool Init();
-  void Destroy();
-
-  // Run on hand_module_thread_
-  void CreateSampleImages();
-  void ReleasePipelineResources();
-
-  // Run on hand_module_thread_
-  void StopHandModuleThread();
-  // Run on hand extension thread
-  void OnStopHandModuleThread();
-
-  size_t CalculateBinaryMessageSize();
+  // Helpers.
+  void ReleaseResources();
   void DispatchErrorEvent(const ErrorCode& error, const std::string& message);
 
+ private:
+  // UNINITIALIZED --- init() ---> INITIALIZED
+  // INITIALIZED   -- start() ---> STREAMING
+  // STREAMING     --- stop() ---> UNINITIALIZED
+  // STREAMING     -- release() -> UNINITIALIZED
+  // INITIALIZED   -- release() -> UNINITIALIZED
+  //
+  // new HandModuleObject with UNINITIALIZED state.
+  // delete HandModuleObject will release.
   enum State {
-    NOT_READY,
-    IDLE,
-    TRACKING,
+    UNINITIALIZED,
+    INITIALIZED,
+    STREAMING,
   };
   State state_;
 
-  bool on_sampleprocessed_;
-  bool on_error_;
-  bool on_alert_;
+  // To indicate whether the event is being listened.
+  bool on_sampleprocessed_event_;
+  bool on_error_event_;
 
-  base::Thread hand_module_thread_;
+  base::Thread pipeline_thread_;
   scoped_refptr<base::MessageLoopProxy> message_loop_;
 
-  PXCSession* session_;
-  PXCSenseManager* sense_manager_;
-  PXCHandModule* hand_module_;
-  PXCHandData* hand_output_;
-  PXCHandConfiguration* hand_config_;
-  PXCImage* depth_image_;
+  PXCSession* pxc_session_;
+  PXCSenseManager* pxc_sense_manager_;
+  PXCHandModule* pxc_hand_module_;
+  PXCHandData* pxc_hand_data_;
+  PXCHandConfiguration* pxc_hand_config_;
+  PXCImage* pxc_depth_image_;
+
+  double sample_processed_time_stamp_;
 
   scoped_ptr<uint8[]> binary_message_;
   size_t binary_message_size_;

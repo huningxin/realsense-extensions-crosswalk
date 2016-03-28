@@ -5,6 +5,7 @@
 // HandModule interface
 namespace hand_module {
   enum PixelFormat {
+    RGB32,
     DEPTH
   };
 
@@ -125,18 +126,22 @@ namespace hand_module {
     Joints normalizedJoints;
   };
 
-  dictionary Output {
-    long timeStamp;
-    Hand[] hands;
+  dictionary SampleProcessedEvent {
+    double timeStamp;
   };
 
   dictionary Sample {
-    long timeStamp;
+    double timeStamp;
     Image depth;
   };
 
+  dictionary HandData {
+    double timeStamp;
+    Hand[] hands;
+  };
+
   callback SamplePromise = void (Sample sample);
-  callback OutputPromise = void (Output output);
+  callback HandDataPromise = void (HandData data);
 
   interface Events {
     void onerror();
@@ -144,11 +149,13 @@ namespace hand_module {
   };
 
   interface Functions {
+    void init();
     void start();
     void stop();
+    void release();
 
-    void getSample(SamplePromise promise);
-    void getOutput(OutputPromise promise);
+    void getLatestSample(SamplePromise promise);
+    void getLatestHandData(HandDataPromise promise);
     
     [nodoc] HandModule handModuleConstructor(DOMString objectId);
   };

@@ -1,4 +1,4 @@
-// Copyright (c) 2015 Intel Corporation. All rights reserved.
+// Copyright (c) 2016 Intel Corporation. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,467 +10,333 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/time/time.h"
 #include "realsense/common/win/common_utils.h"
 
 namespace realsense {
 namespace hand {
+
+#define PXC_SUCCEEDED(status) (((pxcStatus)(status)) >= PXC_STATUS_NO_ERROR)
+#define PXC_FAILED(status) (((pxcStatus)(status)) < PXC_STATUS_NO_ERROR)
+
+#define MESSAGE_TO_METHOD(message, method) \
+  handler_.Register(message,\
+                    base::Bind(&method,\
+                               base::Unretained(this)));
 
 using namespace realsense::common;  // NOLINT
 using namespace realsense::jsapi::hand_module; // NOLINT
 using namespace xwalk::common; // NOLINT
 
 HandModuleObject::HandModuleObject()
-    : state_(NOT_READY),
-      on_sampleprocessed_(false),
-      on_error_(false),
-      on_alert_(false),
-      hand_module_thread_("HandModulePreviewThread"),
+    : state_(UNINITIALIZED),
+      on_sampleprocessed_event_(false),
+      on_error_event_(false),
+      pipeline_thread_("HandModuleObjectThread"),
       message_loop_(base::MessageLoopProxy::current()),
-      session_(NULL),
-      sense_manager_(NULL),
-      hand_output_(NULL),
-      hand_config_(NULL),
-      depth_image_(NULL),
+      pxc_session_(NULL),
+      pxc_sense_manager_(NULL),
+      pxc_hand_data_(NULL),
+      pxc_depth_image_(NULL),
       binary_message_size_(0) {
-  handler_.Register("start",
-                    base::Bind(&HandModuleObject::OnStart,
-                               base::Unretained(this)));
-  handler_.Register("stop",
-                    base::Bind(&HandModuleObject::OnStop,
-                               base::Unretained(this)));
-  handler_.Register("getSample",
-                    base::Bind(&HandModuleObject::OnGetSample,
-                               base::Unretained(this)));
-  handler_.Register("getOutput",
-                    base::Bind(&HandModuleObject::OnGetOutput,
-                               base::Unretained(this)));
+  MESSAGE_TO_METHOD("init", HandModuleObject::OnInit);
+  MESSAGE_TO_METHOD("start", HandModuleObject::OnStart);
+  MESSAGE_TO_METHOD("stop", HandModuleObject::OnStop);
+  MESSAGE_TO_METHOD("release", HandModuleObject::OnRelease);
+  MESSAGE_TO_METHOD("getLatestSample", HandModuleObject::OnGetLatestSample);
+  MESSAGE_TO_METHOD("getLatestHandData",
+                    HandModuleObject::OnGetLatestHandData);
 }
 
 HandModuleObject::~HandModuleObject() {
-  OnStop(NULL);
-  Destroy();
+  ReleaseResources();
 }
-
 
 void HandModuleObject::StartEvent(const std::string& type) {
   if (type == std::string("sampleprocessed")) {
-    on_sampleprocessed_ = true;
+    on_sampleprocessed_event_ = true;
   } else if (type == std::string("error")) {
-    on_error_ = true;
-  } else if (type == std::string("alert")) {
-    on_alert_ = true;
+    on_error_event_ = true;
+  } else {
+    NOTREACHED();
   }
 }
 
 void HandModuleObject::StopEvent(const std::string& type) {
   if (type == std::string("sampleprocessed")) {
-    on_sampleprocessed_ = false;
+    on_sampleprocessed_event_ = false;
   } else if (type == std::string("error")) {
-    on_error_ = false;
-  } else if (type == std::string("alert")) {
-    on_alert_ = false;
+    on_error_event_ = false;
+  } else {
+    NOTREACHED();
   }
 }
 
-void HandModuleObject::OnStart(
-    scoped_ptr<XWalkExtensionFunctionInfo> info) {
-  if (hand_module_thread_.IsRunning()) {
-    info->PostResult(
-        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
-                          "Hand module is already started"));
-    return;  // Wrong state.
-  }
-
-  if (!Init()) {
+void HandModuleObject::OnInit(
+     scoped_ptr<XWalkExtensionFunctionInfo> info) {
+  if (state_ != UNINITIALIZED) {
     info->PostResult(
         CreateErrorResult(ERROR_CODE_INIT_FAILED,
-                          "Can't initialize hand module"));
+                          "Already initialized."));
     return;
   }
-
-  hand_module_thread_.Start();
-
-  hand_module_thread_.message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(&HandModuleObject::OnStartPipeline,
-                 base::Unretained(this),
-                 base::Passed(&info)));
-}
-
-void HandModuleObject::OnStop(
-    scoped_ptr<XWalkExtensionFunctionInfo> info) {
-  if (!hand_module_thread_.IsRunning()) {
-    if (info.get()) {
-      info->PostResult(
-          CreateErrorResult(ERROR_CODE_EXEC_FAILED,
-                            "Hand module is not started yet"));
-    }
-    return;  // Wrong state.
-  }
-
-  hand_module_thread_.message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(&HandModuleObject::OnStopPipeline,
-                 base::Unretained(this),
-                 base::Passed(&info)));
-
-  hand_module_thread_.Stop();
-}
-
-void HandModuleObject::OnGetSample(
-    scoped_ptr<XWalkExtensionFunctionInfo> info) {
-  if (!hand_module_thread_.IsRunning()) {
+  CHECK(!pxc_session_);
+  pxc_session_ = PXCSession::CreateInstance();
+  if (!pxc_session_) {
     info->PostResult(
-        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
-            "Hand module is not started yet"));
+        CreateErrorResult(ERROR_CODE_INIT_FAILED,
+                          "Failed to create session."));
     return;
   }
 
-  hand_module_thread_.message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(&HandModuleObject::OnGetSampleOnPipeline,
-                 base::Unretained(this),
-                 base::Passed(&info)));
-}
-
-void HandModuleObject::OnGetOutput(
-  scoped_ptr<XWalkExtensionFunctionInfo> info) {
-  if (!hand_module_thread_.IsRunning()) {
+  CHECK(!pxc_sense_manager_);
+  pxc_sense_manager_ = pxc_session_->CreateSenseManager();
+  if (!pxc_sense_manager_) {
     info->PostResult(
-      CreateErrorResult(ERROR_CODE_EXEC_FAILED,
-      "Hand module is not started yet"));
+        CreateErrorResult(ERROR_CODE_INIT_FAILED,
+                          "Failed to create sense manager."));
+    ReleaseResources();
     return;
   }
 
-  hand_module_thread_.message_loop()->PostTask(
-    FROM_HERE,
-    base::Bind(&HandModuleObject::OnGetOutputOnPipeline,
-    base::Unretained(this),
-    base::Passed(&info)));
-}
-
-void HandModuleObject::OnStartPipeline(
-  scoped_ptr<XWalkExtensionFunctionInfo> info) {
-  DCHECK_EQ(hand_module_thread_.message_loop(), base::MessageLoop::current());
-  DCHECK(state_ == IDLE);
-
-  // Init sense manager.
-  pxcStatus status = sense_manager_->Init();
-  if (status < PXC_STATUS_NO_ERROR) {
-    DLOG(ERROR) << "Failed to init sense manager: " << status;
+  if (PXC_FAILED(pxc_sense_manager_->EnableHand())) {
     info->PostResult(
-        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
-                          "Failed to init sense manager"));
-    ReleasePipelineResources();
-    StopHandModuleThread();
+        CreateErrorResult(ERROR_CODE_INIT_FAILED,
+                          "Failed to enable hand."));
+    ReleaseResources();
     return;
   }
 
-  // Create hand module output.
-  hand_output_ = sense_manager_->QueryHand()->CreateOutput();
-  if (!hand_output_) {
-    DLOG(ERROR) << "Failed to create hand output";
+  CHECK(!pxc_hand_module_);
+  pxc_hand_module_ = pxc_sense_manager_->QueryHand();
+  if (!pxc_hand_module_) {
     info->PostResult(
-        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
-                          "Failed to create hand output"));
-    ReleasePipelineResources();
-    StopHandModuleThread();
+        CreateErrorResult(ERROR_CODE_INIT_FAILED,
+                          "Failed to query hand."));
+    ReleaseResources();
     return;
   }
 
-  // We create depth image according current stream profiles.
-  CreateSampleImages();
+  CHECK(!pxc_hand_data_);
+  pxc_hand_data_ = pxc_hand_module_->CreateOutput();
+  if (!pxc_hand_data_) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_INIT_FAILED,
+                          "Failed to create hand data."));
+    ReleaseResources();
+    return;
+  }
 
-  DLOG(INFO) << "Start, State transit from IDLE to TRACKING";
-  state_ = TRACKING;
-
-  hand_module_thread_.message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(&HandModuleObject::OnRunPipeline,
-                 base::Unretained(this)));
+  state_ = INITIALIZED;
+  DLOG(INFO) << "State: UNINITIALIZED to INITIALIZED";
 
   info->PostResult(CreateSuccessResult());
 }
 
-void HandModuleObject::OnRunPipeline() {
-  DCHECK_EQ(hand_module_thread_.message_loop(), base::MessageLoop::current());
-  if (state_ != TRACKING) return;
-
-  pxcStatus status = sense_manager_->AcquireFrame(true);
-  if (status < PXC_STATUS_NO_ERROR) {
-    DLOG(ERROR) << "AcquiredFrame failed: " << status;
-    if (on_error_) {
-      DispatchErrorEvent(ERROR_CODE_EXEC_FAILED, "Fail to AcquireFrame. Stop.");
-    }
-
-    ReleasePipelineResources();
-    StopHandModuleThread();
-    return;
-  }
-
-  hand_output_->Update();
-  PXCCapture::Sample* hand_sample = sense_manager_->QueryHandSample();
-  if (hand_sample) {
-    if (on_sampleprocessed_) {
-      if (depth_image_ && hand_sample->depth) {
-        depth_image_->CopyImage(hand_sample->depth);
-      }
-      DispatchEvent("processedsample");
-    }
-  } else {
-    // hand_sample is NULL means hand module is paused
-    // or error happened. Just ignore and continue next frame.
-    DLOG(ERROR) << "QueryHandSample() returned NULL";
-  }
-
-  sense_manager_->ReleaseFrame();
-
-  hand_module_thread_.message_loop()->PostTask(
-      FROM_HERE,
-      base::Bind(&HandModuleObject::OnRunPipeline,
-                 base::Unretained(this)));
-}
-
-void HandModuleObject::OnStopPipeline(
-    scoped_ptr<xwalk::common::XWalkExtensionFunctionInfo> info) {
-  DCHECK_EQ(hand_module_thread_.message_loop(), base::MessageLoop::current());
-
-  ReleasePipelineResources();
-
-  if (info.get()) {
-    info->PostResult(CreateSuccessResult());
-  }
-}
-
-void HandModuleObject::OnGetSampleOnPipeline(
+void HandModuleObject::OnStart(
     scoped_ptr<XWalkExtensionFunctionInfo> info) {
-  DCHECK_EQ(hand_module_thread_.message_loop(), base::MessageLoop::current());
-
-  bool fail = false;
-
-  if (state_ != TRACKING) {
+  if (state_ != INITIALIZED) {
     info->PostResult(
         CreateErrorResult(ERROR_CODE_EXEC_FAILED,
-            "Is not started yet, no processed_sample"));
+                          state_ == UNINITIALIZED ?
+                              "Not initialized." :
+                              "Already streaming."));
     return;
   }
 
-  PXCImage* depth = depth_image_;
-
-  const size_t post_data_size = CalculateBinaryMessageSize();
-  if (binary_message_size_ < post_data_size) {
-    binary_message_.reset(new uint8[post_data_size]);
-    binary_message_size_ = post_data_size;
+  if (PXC_FAILED(pxc_sense_manager_->Init())) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "Failed to init sense manager"));
   }
 
-  size_t offset = 0;
-  int* int_array = reinterpret_cast<int*>(binary_message_.get());
-  // Fill ProcessedSample::depth image.
-  if (depth) {
-    PXCImage::ImageInfo depth_info = depth->QueryInfo();
-    int_array[0] = 2;  // 2 for PixelFormat::PIXEL_FORMAT_DEPTH
-    int_array[1] = depth_info.width;
-    int_array[2] = depth_info.height;
-    offset += 3 * sizeof(int);
-    PXCImage::ImageData depth_data;
-    pxcStatus status = depth->AcquireAccess(
-        PXCImage::ACCESS_READ, PXCImage::PIXEL_FORMAT_DEPTH, &depth_data);
-    uint16_t* uint16_array = reinterpret_cast<uint16_t*>(
-        binary_message_.get() + offset);
-    if (status >= PXC_STATUS_NO_ERROR) {
-      int k = 0;
-      for (int y = 0; y < depth_info.height; ++y) {
-        for (int x = 0; x < depth_info.width; ++x) {
-          uint16_t* depth16 =
-              reinterpret_cast<uint16_t*>(
-                  depth_data.planes[0] + depth_data.pitches[0] * y);
-          uint16_array[k++] = depth16[x];
-        }
-      }
-      offset += depth_info.width * depth_info.height * 2;
-      depth->ReleaseAccess(&depth_data);
-    } else {
-      fail = true;
-      DLOG(INFO) << "Failed to access depth image data: " << status;
+  PXCCapture::Device::StreamProfileSet profiles = {};
+  if (PXC_FAILED(pxc_sense_manager_->QueryCaptureManager()->QueryDevice()
+      ->QueryStreamProfileSet(&profiles))) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "Failed to query working profile"));
+    return;
+  }
+
+  CHECK(profiles.depth.imageInfo.format == PXCImage::PIXEL_FORMAT_DEPTH);
+  pxc_depth_image_ = pxc_session_->CreateImage(&profiles.depth.imageInfo);
+
+  state_ = STREAMING;
+  DLOG(INFO) << "State: from INITIALIZED to STREAMING.";
+
+  message_loop_->PostTask(
+      FROM_HERE,
+      base::Bind(&HandModuleObject::RunPipeline,
+                  base::Unretained(this)));
+
+  info->PostResult(CreateSuccessResult());
+}
+
+void HandModuleObject::OnStop(
+    scoped_ptr<XWalkExtensionFunctionInfo> info) {
+  if (state_ != STREAMING) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "Not streaming."));
+    return;
+  }
+
+  pxc_sense_manager_->Close();
+
+  state_ = INITIALIZED;
+  DLOG(INFO) << "State: from STREAMING to INITIALIZED.";
+
+  info->PostResult(CreateSuccessResult());
+}
+
+void HandModuleObject::OnRelease(
+    scoped_ptr<XWalkExtensionFunctionInfo> info) {
+  if (state_ == UNINITIALIZED) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "Not initialized."));
+    return;
+  }
+
+  ReleaseResources();
+
+  state_ = UNINITIALIZED;
+  DLOG(INFO) << "State: from INITIALIZED to UNINITIALIZED.";
+
+  info->PostResult(CreateSuccessResult());
+}
+
+void HandModuleObject::OnGetLatestSample(
+    scoped_ptr<XWalkExtensionFunctionInfo> info) {
+  if (!pxc_depth_image_) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "No sample data."));
+    return;
+  }
+
+  const int call_id_size = sizeof(int);
+  const int time_stamp_size = sizeof(double);
+  const int image_header_size = 3 * sizeof(int); // format, width, height
+  
+  CHECK(pxc_depth_image_);
+  PXCImage::ImageInfo depth_info = pxc_depth_image_->QueryInfo();
+  int depth_image_size =
+      depth_info.width * depth_info.height * sizeof(uint16);
+  
+  size_t binary_message_size = call_id_size + time_stamp_size +
+      image_header_size + depth_image_size;
+
+  if (binary_message_size_ < binary_message_size) {
+    binary_message_.reset(new uint8[binary_message_size]);
+    binary_message_size_ = binary_message_size;
+  }
+
+  int offset = call_id_size;
+
+  double* double_view =
+      reinterpret_cast<double*>(binary_message_.get() + offset);
+  double_view[0] = sample_processed_time_stamp_;
+
+  offset += time_stamp_size;
+  int* int_view = reinterpret_cast<int*>(binary_message_.get() + offset);
+  int_view[0] = 2;  // 2 for PixelFormat::PIXEL_FORMAT_DEPTH
+  int_view[1] = depth_info.width;
+  int_view[2] = depth_info.height;
+
+  PXCImage::ImageData image_data;
+  if (PXC_FAILED(pxc_depth_image_->AcquireAccess(
+        PXCImage::ACCESS_READ, PXCImage::PIXEL_FORMAT_DEPTH, &image_data))) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "Failed to access depth image data."));
+    return;
+  }
+
+  offset += image_header_size;
+  uint16_t* uint16_view =
+      reinterpret_cast<uint16_t*>(binary_message_.get() + offset);
+  int k = 0;
+  for (int y = 0; y < depth_info.height; ++y) {
+    for (int x = 0; x < depth_info.width; ++x) {
+      uint16_t* depth16 =
+          reinterpret_cast<uint16_t*>(
+                  image_data.planes[0] + image_data.pitches[0] * y);
+          uint16_view[k++] = depth16[x];
     }
   }
 
-  if (fail) {
-    info->PostResult(
-        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
-                          "Failed to prepare processed_sample"));
-  } else {
-    DCHECK(offset <= post_data_size);
-    scoped_ptr<base::ListValue> result(new base::ListValue());
-    result->Append(base::BinaryValue::CreateWithCopiedBuffer(
-        reinterpret_cast<const char*>(binary_message_.get()),
-        offset));
-    info->PostResult(result.Pass());
-  }
+  pxc_depth_image_->ReleaseAccess(&image_data);
+ 
+  scoped_ptr<base::ListValue> result(new base::ListValue());
+  result->Append(base::BinaryValue::CreateWithCopiedBuffer(
+      reinterpret_cast<const char*>(binary_message_.get()),
+      binary_message_size_));
+  info->PostResult(result.Pass());
 }
 
-void HandModuleObject::OnGetOutputOnPipeline(
+void HandModuleObject::OnGetLatestHandData(
   scoped_ptr<XWalkExtensionFunctionInfo> info) {
   NOTIMPLEMENTED();
 }
 
-bool HandModuleObject::Init() {
-  // Assure no race condition between current thread and hand_module_thread_
-  DCHECK(!hand_module_thread_.IsRunning());
+void HandModuleObject::RunPipeline() {
+  if (state_ != STREAMING) return;
 
-  if (state_ != NOT_READY) {
-    return true;
-  }
-
-  // Create session.
-  if (!session_) {
-    session_ = PXCSession::CreateInstance();
-    if (!session_) {
-      DLOG(ERROR) << "Failed to create session";
-      return false;
+  if (PXC_FAILED(pxc_sense_manager_->AcquireFrame(true))) {
+    if (on_error_event_) {
+      DispatchErrorEvent(ERROR_CODE_EXEC_FAILED,
+                         "Fail to AcquireFrame.");
     }
   }
 
-  // Create sense manager.
-  if (!sense_manager_) {
-    sense_manager_ = session_->CreateSenseManager();
-    if (!sense_manager_) {
-      DLOG(ERROR) << "Failed to create sense manager";
-      return false;
+  if (on_sampleprocessed_event_) {
+    PXCCapture::Sample *processed_sample =
+        pxc_sense_manager_->QueryHandSample();
+    if (processed_sample) {
+      if (processed_sample->depth) {
+        pxc_depth_image_->CopyImage(processed_sample->depth);
+      }
+      pxc_hand_data_->Update();
+      sample_processed_time_stamp_ = base::Time::Now().ToJsTime();
+      SampleProcessedEvent eventData;
+      eventData.time_stamp = sample_processed_time_stamp_;
+      scoped_ptr<base::ListValue> data(new base::ListValue);
+      data->Append(eventData.ToValue().release());
+      DispatchEvent("sampleprocessed", data.Pass());
     }
   }
 
-  // Enable hand module in sense manager.
-  sense_manager_->EnableHand();
-  PXCHandModule* hand_module = sense_manager_->QueryHand();
-  if (!hand_module) {
-    DLOG(ERROR) << "Failed to enable hand module";
-    return false;
-  }
+  pxc_sense_manager_->ReleaseFrame();
 
-  // Create HandConfiguration instance.
-  if (hand_config_) {
-    hand_config_->Release();
-  }
-  hand_config_ = hand_module->CreateActiveConfiguration();
-  if (!hand_config_) {
-    DLOG(ERROR) << "Failed to create HandConfiguration";
-    return false;
-  }
-
-  // Transit from NOT_READY to IDLE state.
-  state_ = IDLE;
-  DLOG(INFO) << "State transit from NOT_READY to IDLE";
-  return true;
-}
-
-void HandModuleObject::Destroy() {
-  // Assure no race condition between current thread and hand_module_thread_
-  DCHECK(!hand_module_thread_.IsRunning());
-
-  if (hand_config_) {
-    hand_config_->Release();
-    hand_config_ = NULL;
-  }
-
-  if (sense_manager_) {
-    sense_manager_->Close();
-    sense_manager_->Release();
-    sense_manager_ = NULL;
-  }
-
-  if (session_) {
-    session_->Release();
-    session_ = NULL;
-  }
-  DLOG(INFO) << "Destroy, State transit from " << state_ << " to NOT_READY";
-  state_ = NOT_READY;
-}
-
-void HandModuleObject::CreateSampleImages() {
-  DCHECK(!depth_image_);
-
-  PXCCapture::Device::StreamProfileSet profiles = {};
-  sense_manager_->QueryCaptureManager()->QueryDevice()
-      ->QueryStreamProfileSet(&profiles);
-
-  // depth image.
-  if (profiles.depth.imageInfo.format) {
-    // Only support depth stream PIXEL_FORMAT_DEPTH.
-    if (profiles.depth.imageInfo.format == PXCImage::PIXEL_FORMAT_DEPTH) {
-      DLOG(INFO) << "depth.imageInfo: width is "
-          << profiles.depth.imageInfo.width
-          << ", height is " << profiles.depth.imageInfo.height
-          << ", format is "
-          << PXCImage::PixelFormatToString(profiles.depth.imageInfo.format);
-      PXCImage::ImageInfo image_info = profiles.depth.imageInfo;
-      image_info.format = PXCImage::PIXEL_FORMAT_DEPTH;
-      depth_image_ = sense_manager_->QuerySession()
-          ->CreateImage(&image_info);
-    } else {
-      DLOG(ERROR) << "Device depth stream format is not DEPTH: "
-          << profiles.depth.imageInfo.format;
-    }
-  } else {
-    DLOG(ERROR) << "Device depth stream format undefined";
-  }
-}
-
-void HandModuleObject::ReleasePipelineResources() {
-  DCHECK_EQ(hand_module_thread_.message_loop(), base::MessageLoop::current());
-
-  binary_message_.reset();
-  binary_message_size_ = 0;
-
-  if (depth_image_) {
-    depth_image_->Release();
-    depth_image_ = NULL;
-  }
-  if (hand_output_) {
-    hand_output_->Release();
-    hand_output_ = NULL;
-  }
-  if (hand_config_) {
-    hand_config_->Release();
-    hand_config_ = NULL;
-  }
-
-  sense_manager_->Close();
-
-  DLOG(INFO) << "Release pipeline, State transit from "
-      << state_ << " to NOT_READY";
-  state_ = NOT_READY;
-}
-
-void HandModuleObject::StopHandModuleThread() {
   message_loop_->PostTask(
       FROM_HERE,
-      base::Bind(&HandModuleObject::OnStopHandModuleThread,
+      base::Bind(&HandModuleObject::RunPipeline,
                  base::Unretained(this)));
 }
 
-void HandModuleObject::OnStopHandModuleThread() {
-  if (hand_module_thread_.IsRunning()) {
-    hand_module_thread_.Stop();
-  }
-}
+void HandModuleObject::ReleaseResources() {
+  binary_message_.reset();
+  binary_message_size_ = 0;
 
-size_t HandModuleObject::CalculateBinaryMessageSize() {
-  const int image_header_size = 3 * sizeof(int);  // format, width, height
-  
-  int depth_image_size = 0;
-  if (depth_image_) {
-    PXCImage::ImageInfo depth_info = depth_image_->QueryInfo();
-    depth_image_size = depth_info.width * depth_info.height * 2;
+  if (pxc_depth_image_) {
+    pxc_depth_image_->Release();
+    pxc_depth_image_ = NULL;
   }
-
-  const int message_size =
-      // call_id
-      sizeof(int)
-      // color image
-      // depth image
-      + image_header_size + depth_image_size;
-  return message_size;
+  if (pxc_hand_data_) {
+    pxc_hand_data_->Release();
+    pxc_hand_data_ = NULL;
+  }
+  if (pxc_sense_manager_) {
+    pxc_sense_manager_->Close();
+    pxc_sense_manager_->Release();
+    pxc_sense_manager_ = NULL;
+  }
+  if (pxc_session_) {
+    pxc_session_->Release();
+    pxc_session_ = NULL;
+  }
 }
 
 void HandModuleObject::DispatchErrorEvent(
