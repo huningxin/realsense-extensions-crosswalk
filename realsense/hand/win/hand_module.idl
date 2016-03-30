@@ -109,7 +109,7 @@ namespace hand_module {
 
   dictionary Hand {
     long uniqueId;
-    long timeStamp;
+    double timeStamp;
     boolean calibrated;
     BodySide bodySide;
     Rect boundingBoxImage;
@@ -152,10 +152,9 @@ namespace hand_module {
     void init();
     void start();
     void stop();
-    void release();
 
-    void getLatestSample(SamplePromise promise);
-    void getLatestHandData(HandDataPromise promise);
+    void getSample(SamplePromise promise);
+    void getHandData(HandDataPromise promise);
     
     [nodoc] HandModule handModuleConstructor(DOMString objectId);
   };

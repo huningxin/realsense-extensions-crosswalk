@@ -9,7 +9,6 @@
 
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/thread.h"
-#include "third_party/libpxc/include/pxchandconfiguration.h"
 #include "third_party/libpxc/include/pxchanddata.h"
 #include "third_party/libpxc/include/pxchandmodule.h"
 #include "third_party/libpxc/include/pxcimage.h"
@@ -41,11 +40,9 @@ class HandModuleObject
       scoped_ptr<XWalkExtensionFunctionInfo> info);
   void OnStop(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
-  void OnRelease(
-    scoped_ptr<XWalkExtensionFunctionInfo> info);
-  void OnGetLatestSample(
+  void OnGetSample(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
-  void OnGetLatestHandData(
+  void OnGetHandData(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
 
   // Execute the pipeline loop.
@@ -58,9 +55,7 @@ class HandModuleObject
  private:
   // UNINITIALIZED --- init() ---> INITIALIZED
   // INITIALIZED   -- start() ---> STREAMING
-  // STREAMING     --- stop() ---> UNINITIALIZED
-  // STREAMING     -- release() -> UNINITIALIZED
-  // INITIALIZED   -- release() -> UNINITIALIZED
+  // STREAMING     --- stop() ---> INITIALIZED
   //
   // new HandModuleObject with UNINITIALIZED state.
   // delete HandModuleObject will release.
@@ -78,11 +73,8 @@ class HandModuleObject
   base::Thread pipeline_thread_;
   scoped_refptr<base::MessageLoopProxy> message_loop_;
 
-  PXCSession* pxc_session_;
   PXCSenseManager* pxc_sense_manager_;
-  PXCHandModule* pxc_hand_module_;
   PXCHandData* pxc_hand_data_;
-  PXCHandConfiguration* pxc_hand_config_;
   PXCImage* pxc_depth_image_;
 
   double sample_processed_time_stamp_;
