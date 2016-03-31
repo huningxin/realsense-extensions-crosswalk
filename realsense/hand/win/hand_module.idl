@@ -10,9 +10,9 @@ namespace hand_module {
   };
 
   enum BodySide {
-    body_side_unknown,
-    body_side_left,
-    body_side_right
+    unknown,
+    left,
+    right
   };
 
   enum TrackingStatus {
@@ -65,6 +65,7 @@ namespace hand_module {
     ExtremityData leftmost;
     ExtremityData rightmost;
     ExtremityData topmost;
+    ExtremityData bottommost;
     ExtremityData center;
   };
 

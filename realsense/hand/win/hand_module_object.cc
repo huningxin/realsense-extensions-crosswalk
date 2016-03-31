@@ -27,6 +27,143 @@ using namespace realsense::common;  // NOLINT
 using namespace realsense::jsapi::hand_module; // NOLINT
 using namespace xwalk::common; // NOLINT
 
+inline void PopulatePoint2D(Point2D& js_point_2d,
+                            const PXCPointF32& pxc_point_2d) {
+  js_point_2d.x = pxc_point_2d.x;
+  js_point_2d.y = pxc_point_2d.y;
+}
+
+inline void PopulatePoint3D(Point3D& js_point_3d,
+                            const PXCPoint3DF32& pxc_point_3d) {
+  js_point_3d.x = pxc_point_3d.x;
+  js_point_3d.y = pxc_point_3d.y;
+  js_point_3d.z = pxc_point_3d.z;
+}
+
+inline void PopulatePoint4D(Point4D& js_point_4d,
+                            const PXCPoint4DF32& pxc_point_4d) {
+  js_point_4d.x = pxc_point_4d.x;
+  js_point_4d.y = pxc_point_4d.y;
+  js_point_4d.z = pxc_point_4d.z;
+  js_point_4d.w = pxc_point_4d.w;
+}
+
+inline void PopulateJointData(JointData& js_joint_data,
+                              const PXCHandData::JointData& pxc_joint_data) {
+  js_joint_data.confidence = pxc_joint_data.confidence;
+  PopulatePoint3D(js_joint_data.position_world, pxc_joint_data.positionWorld);
+  PopulatePoint3D(js_joint_data.position_image, pxc_joint_data.positionWorld);
+  PopulatePoint4D(js_joint_data.local_rotation, pxc_joint_data.localRotation);
+  PopulatePoint4D(js_joint_data.global_orientation,
+                  pxc_joint_data.globalOrientation);
+  PopulatePoint3D(js_joint_data.speed, pxc_joint_data.speed);
+}
+
+#define POPULATE_FINGER_JOINTS(Type, type, FINGER, finger) \
+  pxc_hand->Query##Type##Joint(PXCHandData::JOINT_##FINGER##_BASE, \
+                              pxc_joint_data); \
+  PopulateJointData(js_hand->##type##_joints.##finger##.base, pxc_joint_data); \
+  pxc_hand->Query##Type##Joint(PXCHandData::JOINT_##FINGER##_JT1, \
+                              pxc_joint_data); \
+  PopulateJointData(js_hand->##type##_joints.##finger##.joint1, \
+                    pxc_joint_data); \
+  pxc_hand->Query##Type##Joint(PXCHandData::JOINT_##FINGER##_JT2, \
+                              pxc_joint_data); \
+  PopulateJointData(js_hand->##type##_joints.##finger##.joint2, \
+                    pxc_joint_data);\
+  pxc_hand->Query##Type##Joint(PXCHandData::JOINT_##FINGER##_TIP, \
+                              pxc_joint_data); \
+  PopulateJointData(js_hand->##type##_joints.##finger##.tip, pxc_joint_data);
+
+#define POPULATE_HAND_JOINTS(Type, type) { \
+  PXCHandData::JointData pxc_joint_data; \
+  pxc_hand->Query##Type##Joint(PXCHandData::JOINT_WRIST, pxc_joint_data); \
+  PopulateJointData(js_hand->##type##_joints.wrist, pxc_joint_data); \
+  pxc_hand->Query##Type##Joint(PXCHandData::JOINT_CENTER, pxc_joint_data); \
+  PopulateJointData(js_hand->##type##_joints.center, pxc_joint_data); \
+  POPULATE_FINGER_JOINTS(Type, type, THUMB, thumb); \
+  POPULATE_FINGER_JOINTS(Type, type, INDEX, index); \
+  POPULATE_FINGER_JOINTS(Type, type, MIDDLE, middle); \
+  POPULATE_FINGER_JOINTS(Type, type, RING, ring); \
+  POPULATE_FINGER_JOINTS(Type, type, PINKY, pinky); \
+}
+
+#define COVERT_ENUM(TYPE) \
+  case PXCHandData::##TYPE : return TYPE;
+
+inline BodySide ConvertBodySide(const PXCHandData::BodySideType pxc_body_side) {
+  switch(pxc_body_side) {
+    COVERT_ENUM(BODY_SIDE_UNKNOWN);
+    COVERT_ENUM(BODY_SIDE_LEFT);
+    COVERT_ENUM(BODY_SIDE_RIGHT);
+    default: return BODY_SIDE_NONE;
+  }
+}
+
+inline void PopulateRect(Rect& js_rect, const PXCRectI32& pxc_rect) {
+  js_rect.x = pxc_rect.x;
+  js_rect.y = pxc_rect.y;
+  js_rect.w = pxc_rect.w;
+  js_rect.h = pxc_rect.h;
+}
+
+inline void PopulateExtremityData(
+    ExtremityData& js_extremity_data,
+    const PXCHandData::ExtremityData& pxc_extremity_data) {
+  PopulatePoint3D(js_extremity_data.point_image,
+                  pxc_extremity_data.pointImage);
+  PopulatePoint3D(js_extremity_data.point_world,
+                  pxc_extremity_data.pointWorld);
+}
+
+#define POPULATE_EXTREMETY_DATA(TYPE, type) \
+  pxc_hand->QueryExtremityPoint(PXCHandData::EXTREMITY_##TYPE, \
+                                pxc_extremity_data); \
+  PopulateExtremityData(js_hand->extremity_points.##type, \
+                        pxc_extremity_data);
+
+#define POPULATE_EXTREMITY_POINTS { \
+  PXCHandData::ExtremityData pxc_extremity_data; \
+  POPULATE_EXTREMETY_DATA(CLOSEST, closest); \
+  POPULATE_EXTREMETY_DATA(LEFTMOST, leftmost); \
+  POPULATE_EXTREMETY_DATA(RIGHTMOST, rightmost); \
+  POPULATE_EXTREMETY_DATA(TOPMOST, topmost); \
+  POPULATE_EXTREMETY_DATA(BOTTOMMOST, bottommost); \
+  POPULATE_EXTREMETY_DATA(CENTER, center); \
+}
+
+inline void PopluateFingerData(FingerData& js_finger_data,
+                        const PXCHandData::FingerData& pxc_finger_data) {
+  js_finger_data.folderness = pxc_finger_data.foldedness;
+  js_finger_data.radius = pxc_finger_data.radius;
+}
+
+#define POPULATE_FINGER_DATA(TYPE, type) \
+  pxc_hand->QueryFingerData(PXCHandData::FINGER_##TYPE, \
+                            pxc_finger_data); \
+  PopluateFingerData(js_hand->finger_data.##type, pxc_finger_data);
+
+#define POPULATE_FINGERS { \
+  PXCHandData::FingerData pxc_finger_data; \
+  POPULATE_FINGER_DATA(THUMB, thumb); \
+  POPULATE_FINGER_DATA(INDEX, index); \
+  POPULATE_FINGER_DATA(MIDDLE, middle); \
+  POPULATE_FINGER_DATA(RING, ring); \
+  POPULATE_FINGER_DATA(PINKY, pinky); \
+}
+
+inline TrackingStatus ConvertTrackingStatus(
+    const pxcI32& pxc_tracking_status) {
+  switch(pxc_tracking_status) {
+    COVERT_ENUM(TRACKING_STATUS_GOOD);
+    COVERT_ENUM(TRACKING_STATUS_OUT_OF_FOV);
+    COVERT_ENUM(TRACKING_STATUS_OUT_OF_RANGE);
+    COVERT_ENUM(TRACKING_STATUS_HIGH_SPEED);
+    COVERT_ENUM(TRACKING_STATUS_POINTING_FINGERS);
+    default: return TRACKING_STATUS_NONE;
+  }
+}
+
 HandModuleObject::HandModuleObject()
     : state_(UNINITIALIZED),
       message_loop_(base::MessageLoopProxy::current()),
@@ -297,9 +434,53 @@ void HandModuleObject::OnGetSample(
 
 void HandModuleObject::OnGetHandData(
   scoped_ptr<XWalkExtensionFunctionInfo> info) {
-  HandData hand_data;
-  hand_data.time_stamp = sample_processed_time_stamp_;
-  info->PostResult(GetHandData::Results::Create(hand_data));
+  if (!pxc_hand_data_) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "No hand data."));
+    return;
+  }
+ 
+  HandData js_hand_data;
+  js_hand_data.time_stamp = sample_processed_time_stamp_;
+
+  int number_of_hands = pxc_hand_data_->QueryNumberOfHands();
+  for (int i = 0; i < number_of_hands; ++i) {
+    PXCHandData::IHand* pxc_hand = NULL;
+    if (PXC_FAILED(pxc_hand_data_->QueryHandData(
+        PXCHandData::AccessOrderType::ACCESS_ORDER_BY_TIME,
+        i, pxc_hand))) {
+      continue;
+    }
+    linked_ptr<Hand> js_hand(new Hand);
+    
+    js_hand->unique_id = pxc_hand->QueryUniqueId();
+    js_hand->time_stamp = pxc_hand->QueryTimeStamp();
+    js_hand->calibrated = pxc_hand->IsCalibrated() ? true : false;
+    js_hand->body_side = ConvertBodySide(pxc_hand->QueryBodySide());
+    PopulateRect(js_hand->bounding_box_image,
+                  pxc_hand->QueryBoundingBoxImage());
+    PopulatePoint2D(js_hand->mass_center_image,
+                    pxc_hand->QueryMassCenterImage());
+    PopulatePoint3D(js_hand->mass_center_world,
+                    pxc_hand->QueryMassCenterWorld());
+    PopulatePoint4D(js_hand->palm_orientation,
+                    pxc_hand->QueryPalmOrientation());
+    js_hand->palm_radius_image = pxc_hand->QueryPalmRadiusImage();
+    js_hand->palm_radius_world = pxc_hand->QueryPalmRadiusWorld();
+    POPULATE_EXTREMITY_POINTS;
+    POPULATE_FINGERS;
+    if (pxc_hand->HasTrackedJoints())
+      POPULATE_HAND_JOINTS(Tracked, tracked);
+    js_hand->tracking_status =
+        ConvertTrackingStatus(pxc_hand->QueryTrackingStatus());
+    js_hand->openness = pxc_hand->QueryOpenness();
+    if (pxc_hand->HasNormalizedJoints())
+      POPULATE_HAND_JOINTS(Normalized, normalized);
+    js_hand_data.hands.push_back(js_hand);
+  }
+
+  info->PostResult(GetHandData::Results::Create(js_hand_data));
 }
 
 void HandModuleObject::ReleaseResources() {

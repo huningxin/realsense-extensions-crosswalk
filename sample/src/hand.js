@@ -50,9 +50,7 @@ function updateDepth() {
             depthImage, [255, 255, 255], [0, 0, 0], imageData.data);
         depthContext.putImageData(imageData, 0, 0);
       },
-      function(e) {
-        statusSpan.innerHTML = e.message;
-      }
+      handleError
   );
 }
 
@@ -60,10 +58,9 @@ function updateHandData() {
   handModule.getHandData().then(
       function(handData) {
         fpsCounter.update();
+        statusSpan.innerHTML = 'detected hand: ' + handData.hands.length;
       },
-      function(e) {
-          statusSpan.innerHTML = e.message;
-      }
+      handleError
   );
 }
 
