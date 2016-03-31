@@ -126,10 +126,6 @@ namespace hand_module {
     Joints normalizedJoints;
   };
 
-  dictionary SampleProcessedEvent {
-    double timeStamp;
-  };
-
   dictionary Sample {
     double timeStamp;
     Image depth;
@@ -143,16 +139,12 @@ namespace hand_module {
   callback SamplePromise = void (Sample sample);
   callback HandDataPromise = void (HandData data);
 
-  interface Events {
-    void onerror();
-    void onsampleprocessed();
-  };
-
   interface Functions {
     void init();
-    void start();
-    void stop();
+    void open();
+    void close();
 
+    void process();
     void getSample(SamplePromise promise);
     void getHandData(HandDataPromise promise);
     

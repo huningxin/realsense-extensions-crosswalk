@@ -29,17 +29,15 @@ using namespace xwalk::common; // NOLINT
 
 HandModuleObject::HandModuleObject()
     : state_(UNINITIALIZED),
-      on_sampleprocessed_event_(false),
-      on_error_event_(false),
-      pipeline_thread_("HandModuleObjectThread"),
       message_loop_(base::MessageLoopProxy::current()),
       pxc_sense_manager_(NULL),
       pxc_hand_data_(NULL),
       pxc_depth_image_(NULL),
       binary_message_size_(0) {
   MESSAGE_TO_METHOD("init", HandModuleObject::OnInit);
-  MESSAGE_TO_METHOD("start", HandModuleObject::OnStart);
-  MESSAGE_TO_METHOD("stop", HandModuleObject::OnStop);
+  MESSAGE_TO_METHOD("open", HandModuleObject::OnOpen);
+  MESSAGE_TO_METHOD("close", HandModuleObject::OnClose);
+  MESSAGE_TO_METHOD("process", HandModuleObject::OnProcess);
   MESSAGE_TO_METHOD("getSample", HandModuleObject::OnGetSample);
   MESSAGE_TO_METHOD("getHandData",
                     HandModuleObject::OnGetHandData);
@@ -47,26 +45,6 @@ HandModuleObject::HandModuleObject()
 
 HandModuleObject::~HandModuleObject() {
   ReleaseResources();
-}
-
-void HandModuleObject::StartEvent(const std::string& type) {
-  if (type == std::string("sampleprocessed")) {
-    on_sampleprocessed_event_ = true;
-  } else if (type == std::string("error")) {
-    on_error_event_ = true;
-  } else {
-    NOTREACHED();
-  }
-}
-
-void HandModuleObject::StopEvent(const std::string& type) {
-  if (type == std::string("sampleprocessed")) {
-    on_sampleprocessed_event_ = false;
-  } else if (type == std::string("error")) {
-    on_error_event_ = false;
-  } else {
-    NOTREACHED();
-  }
 }
 
 void HandModuleObject::OnInit(
@@ -109,7 +87,7 @@ void HandModuleObject::OnInit(
   info->PostResult(CreateSuccessResult());
 }
 
-void HandModuleObject::OnStart(
+void HandModuleObject::OnOpen(
     scoped_ptr<XWalkExtensionFunctionInfo> info) {
   if (state_ != INITIALIZED) {
     info->PostResult(
@@ -159,15 +137,10 @@ void HandModuleObject::OnStart(
   state_ = STREAMING;
   DLOG(INFO) << "State: from INITIALIZED to STREAMING.";
 
-  message_loop_->PostTask(
-      FROM_HERE,
-      base::Bind(&HandModuleObject::RunPipeline,
-                 base::Unretained(this)));
-
   info->PostResult(CreateSuccessResult());
 }
 
-void HandModuleObject::OnStop(
+void HandModuleObject::OnClose(
     scoped_ptr<XWalkExtensionFunctionInfo> info) {
   if (state_ != STREAMING) {
     info->PostResult(
@@ -206,6 +179,48 @@ void HandModuleObject::OnStop(
 
   state_ = INITIALIZED;
   DLOG(INFO) << "State: from STREAMING to INITIALIZED.";
+
+  info->PostResult(CreateSuccessResult());
+}
+
+void HandModuleObject::OnProcess(
+  scoped_ptr<XWalkExtensionFunctionInfo> info) {
+  if (state_ != STREAMING) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_INIT_FAILED,
+                          "Not streaming."));
+    return;
+  }
+
+  if (PXC_FAILED(pxc_sense_manager_->AcquireFrame(true))) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "Fail to AcquireFrame."));
+    return;
+  }
+
+  PXCCapture::Sample *processed_sample =
+      pxc_sense_manager_->QueryHandSample();
+  if (processed_sample) {
+    if (processed_sample->depth) {
+      pxc_depth_image_->CopyImage(processed_sample->depth);
+    }
+    sample_processed_time_stamp_ = base::Time::Now().ToJsTime();
+  } else {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "Fail to query hand sample."));
+    return;
+  }
+
+  if (PXC_FAILED(pxc_hand_data_->Update())) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "Fail to update hand data."));
+    return;
+  }
+
+  pxc_sense_manager_->ReleaseFrame();
 
   info->PostResult(CreateSuccessResult());
 }
@@ -282,42 +297,9 @@ void HandModuleObject::OnGetSample(
 
 void HandModuleObject::OnGetHandData(
   scoped_ptr<XWalkExtensionFunctionInfo> info) {
-  NOTIMPLEMENTED();
-}
-
-void HandModuleObject::RunPipeline() {
-  if (state_ != STREAMING) return;
-
-  if (PXC_FAILED(pxc_sense_manager_->AcquireFrame(true))) {
-    if (on_error_event_) {
-      DispatchErrorEvent(ERROR_CODE_EXEC_FAILED,
-                         "Fail to AcquireFrame.");
-    }
-  }
-
-  if (on_sampleprocessed_event_) {
-    PXCCapture::Sample *processed_sample =
-        pxc_sense_manager_->QueryHandSample();
-    if (processed_sample) {
-      if (processed_sample->depth) {
-        pxc_depth_image_->CopyImage(processed_sample->depth);
-      }
-      pxc_hand_data_->Update();
-      sample_processed_time_stamp_ = base::Time::Now().ToJsTime();
-      SampleProcessedEvent eventData;
-      eventData.time_stamp = sample_processed_time_stamp_;
-      scoped_ptr<base::ListValue> data(new base::ListValue);
-      data->Append(eventData.ToValue().release());
-      DispatchEvent("sampleprocessed", data.Pass());
-    }
-  }
-
-  pxc_sense_manager_->ReleaseFrame();
-
-  message_loop_->PostTask(
-      FROM_HERE,
-      base::Bind(&HandModuleObject::RunPipeline,
-                 base::Unretained(this)));
+  HandData hand_data;
+  hand_data.time_stamp = sample_processed_time_stamp_;
+  info->PostResult(GetHandData::Results::Create(hand_data));
 }
 
 void HandModuleObject::ReleaseResources() {
@@ -337,16 +319,6 @@ void HandModuleObject::ReleaseResources() {
     pxc_sense_manager_->Release();
     pxc_sense_manager_ = NULL;
   }
-}
-
-void HandModuleObject::DispatchErrorEvent(
-    const ErrorCode& error, const std::string& message) {
-  RSError rsError;
-  rsError.error = error;
-  rsError.message = message;
-  scoped_ptr<base::ListValue> data(new base::ListValue);
-  data->Append(rsError.ToValue().release());
-  DispatchEvent("error", data.Pass());
 }
 
 }  // namespace hand

@@ -4,7 +4,6 @@
 
 var HandModule = function(objectId) {
   common.BindingObject.call(this, objectId ? objectId : common.getUniqueId());
-  common.EventTarget.call(this);
 
   this._registerLifecycleTracker();
 
@@ -40,29 +39,11 @@ var HandModule = function(objectId) {
   }
 
   this._addMethodWithPromise('init');
-  this._addMethodWithPromise('start');
-  this._addMethodWithPromise('stop');
+  this._addMethodWithPromise('open');
+  this._addMethodWithPromise('process');
+  this._addMethodWithPromise('close');
   this._addMethodWithPromise('getSample', null, wrapSampleReturns);
   this._addMethodWithPromise('getHandData');
-
-  var HandErrorEvent = function(type, data) {
-    this.type = type;
-
-    if (data) {
-      this.error = data.error;
-      this.message = data.message;
-    }
-  };
-  this._addEvent('error', HandErrorEvent);
-
-  var SampleProcessedEvent = function(type, data) {
-    this.type = type;
-
-    if (data) {
-      this.timeStamp = data.timeStamp;
-    }
-  };
-  this._addEvent('sampleprocessed', SampleProcessedEvent);
 };
 
 HandModule.prototype = new common.EventTargetPrototype();

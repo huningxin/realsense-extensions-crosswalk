@@ -23,39 +23,33 @@ using realsense::jsapi::common::ErrorCode;
 using xwalk::common::XWalkExtensionFunctionInfo;
 
 class HandModuleObject
-    : public xwalk::common::EventTarget {
+    : public xwalk::common::BindingObject {
  public:
   HandModuleObject();
   ~HandModuleObject() override;
-
-  // EventTarget implementation.
-  void StartEvent(const std::string& type) override;
-  void StopEvent(const std::string& type) override;
 
  private:
   // Message handlers.
   void OnInit(
      scoped_ptr<XWalkExtensionFunctionInfo> info);
-  void OnStart(
+  void OnOpen(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
-  void OnStop(
+  void OnClose(
+      scoped_ptr<XWalkExtensionFunctionInfo> info);
+  void OnProcess(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
   void OnGetSample(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
   void OnGetHandData(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
 
-  // Execute the pipeline loop.
-  void RunPipeline();
-
   // Helpers.
   void ReleaseResources();
-  void DispatchErrorEvent(const ErrorCode& error, const std::string& message);
 
  private:
   // UNINITIALIZED --- init() ---> INITIALIZED
-  // INITIALIZED   -- start() ---> STREAMING
-  // STREAMING     --- stop() ---> INITIALIZED
+  // INITIALIZED   -- open() ---> STREAMING
+  // STREAMING     --- close() ---> INITIALIZED
   //
   // new HandModuleObject with UNINITIALIZED state.
   // delete HandModuleObject will release.
@@ -66,11 +60,6 @@ class HandModuleObject
   };
   State state_;
 
-  // To indicate whether the event is being listened.
-  bool on_sampleprocessed_event_;
-  bool on_error_event_;
-
-  base::Thread pipeline_thread_;
   scoped_refptr<base::MessageLoopProxy> message_loop_;
 
   PXCSenseManager* pxc_sense_manager_;
