@@ -52,7 +52,7 @@ inline void PopulateJointData(JointData& js_joint_data,
                               const PXCHandData::JointData& pxc_joint_data) {
   js_joint_data.confidence = pxc_joint_data.confidence;
   PopulatePoint3D(js_joint_data.position_world, pxc_joint_data.positionWorld);
-  PopulatePoint3D(js_joint_data.position_image, pxc_joint_data.positionWorld);
+  PopulatePoint3D(js_joint_data.position_image, pxc_joint_data.positionImage);
   PopulatePoint4D(js_joint_data.local_rotation, pxc_joint_data.localRotation);
   PopulatePoint4D(js_joint_data.global_orientation,
                   pxc_joint_data.globalOrientation);

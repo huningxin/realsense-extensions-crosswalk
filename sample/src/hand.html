@@ -6,6 +6,11 @@
       canvas {
         max-width: 65%;
         text-align: center;
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        border-style: solid;
+        border-width: 1px;
       }
       .center {
         text-align:center; 
@@ -32,16 +37,27 @@
   <body>
     <div class='controls_container'>
       <fieldset style='margin-bottom:10px;'>
-        <legend>Hand Module</legend>
-        <div style='margin-bottom:5px;'>
-          <button id='start'>Start</button>
-          <button id='stop'>Stop</button>
-        </div>
+        <legend>Options</legend>
+        <input type='checkbox' id='depthmap'>
+        <label for='depthmap'>Show Depth</label>
+        <br>
+        <input type='checkbox' id='joints'>
+        <label for='joints'>Draw Joints</label>
+        <br>
+        <input type='checkbox' id='skeleton'>
+        <label for='skeleton'>Draw Sleleton</label>
+        <br>
+        <input type='checkbox' id='extremities'>
+        <label for='extremities'>Draw Extremities</label>
       </fieldset>
+      <div style='margin-bottom:5px;'>
+        <button id='start'>Start</button>
+        <button id='stop'>Stop</button>
+      </div>
     </div>
     <div style='margin-bottom:5px;' class='center' id='viewer'>
-      <canvas id='overlay' style='position: absolute; left: 10px; top: 10px; z-index: 1;'></canvas>
-      <canvas id='depth' style='position: absolute; left: 10px; top: 10px;'></canvas>
+      <canvas id='overlay' style='z-index: 1;'></canvas>
+      <canvas id='depth'></canvas>
     </div>
     <p class='footer'>Status: <span id='status'></span></p>
   </body>
