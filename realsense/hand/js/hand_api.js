@@ -41,10 +41,8 @@ var HandModule = function(objectId) {
   var handModuleObject = this;
 
   function wrapHandsReturns(hands) {
-    console.log(hands.length);
     var handObjectArray = [];
     for (var i in hands) {
-      debugger;
       var handObject = new Hand(handModuleObject, hands[i]);
       handObjectArray.push(handObject);
     }
@@ -57,7 +55,8 @@ var HandModule = function(objectId) {
   this._addMethodWithPromise('close');
   this._addMethodWithPromise('getSample', null, wrapSampleReturns);
   this._addMethodWithPromise('getHands', null, wrapHandsReturns);
-  this._addMethodWithPromise('_getHandDataById');
+  this._addMethodWithPromise('_getTrackedJointsById');
+  this._addMethodWithPromise('_getExtremityPointsById');
 };
 
 var Hand = function(handModule, hand) {
@@ -68,21 +67,27 @@ var Hand = function(handModule, hand) {
     'timeStamp': {
       value: hand.timeStamp,
     },
-    'getHandData' : {
-      value: function () {
+  });
+
+  function addMethod(hand, name) {
+    Object.defineProperty(hand, name, {
+      value: function() {
         return new Promise(function(resolve, reject) {
-          handModule._getHandDataById(hand.uniqueId).then(
-            function(handData) {
-              resolve(handData);
+          handModule['_' + name + 'ById'](hand.uniqueId).then(
+            function(result) {
+              resolve(result);
             },
             function(error) {
               reject(error);
             }
           );
         });
-      },
-    }
-  });
+      }
+    });
+  };
+
+  addMethod(this, 'getTrackedJoints');
+  addMethod(this, 'getExtremityPoints');
 };
 
 HandModule.prototype = new common.EventTargetPrototype();

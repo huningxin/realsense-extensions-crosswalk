@@ -42,7 +42,9 @@ class HandModuleObject
       scoped_ptr<XWalkExtensionFunctionInfo> info);
   void OnGetHands(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
-  void OnGetHandDataById(
+  void OnGetTrackedJointsById(
+      scoped_ptr<XWalkExtensionFunctionInfo> info);
+  void OnGetExtremityPointsById(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
 
   // Helpers.

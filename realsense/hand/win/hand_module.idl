@@ -60,7 +60,7 @@ namespace hand_module {
     Point3D pointImage;
   };
 
-  dictionary ExtremityDataPoints {
+  dictionary ExtremityPoints {
     ExtremityData closest;
     ExtremityData leftmost;
     ExtremityData rightmost;
@@ -111,15 +111,16 @@ namespace hand_module {
   dictionary Hand {
     long uniqueId;
     double timeStamp;
+    
   };
 
   dictionary HandData {
-    TrackingStatus trackingStatus;
     BodySide bodySide;
+    TrackingStatus trackingStatus;
     Rect boundingBoxImage;
     Point2D massCenterImage;
     Point3D massCenterWorld;
-    ExtremityDataPoints extremityPoints;
+    ExtremityPoints extremityPoints;
     Point4D palmOrientation;
     double palmRadiusImage;
     double palmRadiusWorld;
@@ -136,7 +137,8 @@ namespace hand_module {
 
   callback SamplePromise = void (Sample sample);
   callback HandsPromise = void (Hand[] hands);
-  callback HandDataPromise = void (HandData handData);
+  callback JointsPromise = void (Joints joints);
+  callback ExtremityPointsPromise = void (ExtremityPoints extremityPoints);
 
   interface Functions {
     void init();
@@ -146,7 +148,8 @@ namespace hand_module {
     void process();
     void getSample(SamplePromise promise);
     void getHands(HandsPromise promise);
-    void _getHandDataById(long uniqueId, HandDataPromise promise);
+    void _getTrackedJointsById(long handId, JointsPromise promise);
+    void _getExtremityPointsById(long handId, ExtremityPointsPromise promise);
     
     [nodoc] HandModule handModuleConstructor(DOMString objectId);
   };
