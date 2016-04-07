@@ -62,25 +62,25 @@ inline void PopulateJointData(JointData& js_joint_data,
 #define POPULATE_FINGER_JOINTS(Type, type, FINGER, finger) \
   pxc_hand->Query##Type##Joint(PXCHandData::JOINT_##FINGER##_BASE, \
                               pxc_joint_data); \
-  PopulateJointData(js_hand->##type##_joints.##finger##.base, pxc_joint_data); \
+  PopulateJointData(js_hand_data.##type##_joints.##finger##.base, pxc_joint_data); \
   pxc_hand->Query##Type##Joint(PXCHandData::JOINT_##FINGER##_JT1, \
                               pxc_joint_data); \
-  PopulateJointData(js_hand->##type##_joints.##finger##.joint1, \
+  PopulateJointData(js_hand_data.##type##_joints.##finger##.joint1, \
                     pxc_joint_data); \
   pxc_hand->Query##Type##Joint(PXCHandData::JOINT_##FINGER##_JT2, \
                               pxc_joint_data); \
-  PopulateJointData(js_hand->##type##_joints.##finger##.joint2, \
+  PopulateJointData(js_hand_data.##type##_joints.##finger##.joint2, \
                     pxc_joint_data);\
   pxc_hand->Query##Type##Joint(PXCHandData::JOINT_##FINGER##_TIP, \
                               pxc_joint_data); \
-  PopulateJointData(js_hand->##type##_joints.##finger##.tip, pxc_joint_data);
+  PopulateJointData(js_hand_data.##type##_joints.##finger##.tip, pxc_joint_data);
 
 #define POPULATE_HAND_JOINTS(Type, type) { \
   PXCHandData::JointData pxc_joint_data; \
   pxc_hand->Query##Type##Joint(PXCHandData::JOINT_WRIST, pxc_joint_data); \
-  PopulateJointData(js_hand->##type##_joints.wrist, pxc_joint_data); \
+  PopulateJointData(js_hand_data.##type##_joints.wrist, pxc_joint_data); \
   pxc_hand->Query##Type##Joint(PXCHandData::JOINT_CENTER, pxc_joint_data); \
-  PopulateJointData(js_hand->##type##_joints.center, pxc_joint_data); \
+  PopulateJointData(js_hand_data.##type##_joints.center, pxc_joint_data); \
   POPULATE_FINGER_JOINTS(Type, type, THUMB, thumb); \
   POPULATE_FINGER_JOINTS(Type, type, INDEX, index); \
   POPULATE_FINGER_JOINTS(Type, type, MIDDLE, middle); \
@@ -119,7 +119,7 @@ inline void PopulateExtremityData(
 #define POPULATE_EXTREMETY_DATA(TYPE, type) \
   pxc_hand->QueryExtremityPoint(PXCHandData::EXTREMITY_##TYPE, \
                                 pxc_extremity_data); \
-  PopulateExtremityData(js_hand->extremity_points.##type, \
+  PopulateExtremityData(js_hand_data.extremity_points.##type, \
                         pxc_extremity_data);
 
 #define POPULATE_EXTREMITY_POINTS { \
@@ -141,7 +141,7 @@ inline void PopluateFingerData(FingerData& js_finger_data,
 #define POPULATE_FINGER_DATA(TYPE, type) \
   pxc_hand->QueryFingerData(PXCHandData::FINGER_##TYPE, \
                             pxc_finger_data); \
-  PopluateFingerData(js_hand->finger_data.##type, pxc_finger_data);
+  PopluateFingerData(js_hand_data.finger_data.##type, pxc_finger_data);
 
 #define POPULATE_FINGERS { \
   PXCHandData::FingerData pxc_finger_data; \
@@ -176,8 +176,9 @@ HandModuleObject::HandModuleObject()
   MESSAGE_TO_METHOD("close", HandModuleObject::OnClose);
   MESSAGE_TO_METHOD("process", HandModuleObject::OnProcess);
   MESSAGE_TO_METHOD("getSample", HandModuleObject::OnGetSample);
-  MESSAGE_TO_METHOD("getHandData",
-                    HandModuleObject::OnGetHandData);
+  MESSAGE_TO_METHOD("getHands", HandModuleObject::OnGetHands);
+  MESSAGE_TO_METHOD("_getHandDataById",
+                    HandModuleObject::OnGetHandDataById);
 }
 
 HandModuleObject::~HandModuleObject() {
@@ -432,17 +433,16 @@ void HandModuleObject::OnGetSample(
   info->PostResult(result.Pass());
 }
 
-void HandModuleObject::OnGetHandData(
-  scoped_ptr<XWalkExtensionFunctionInfo> info) {
+void HandModuleObject::OnGetHands(
+    scoped_ptr<XWalkExtensionFunctionInfo> info) {
   if (!pxc_hand_data_) {
     info->PostResult(
         CreateErrorResult(ERROR_CODE_EXEC_FAILED,
                           "No hand data."));
     return;
   }
- 
-  HandData js_hand_data;
-  js_hand_data.time_stamp = sample_processed_time_stamp_;
+
+  std::vector<linked_ptr<Hand> > js_hands;
 
   int number_of_hands = pxc_hand_data_->QueryNumberOfHands();
   for (int i = 0; i < number_of_hands; ++i) {
@@ -456,31 +456,64 @@ void HandModuleObject::OnGetHandData(
     
     js_hand->unique_id = pxc_hand->QueryUniqueId();
     js_hand->time_stamp = pxc_hand->QueryTimeStamp();
-    js_hand->calibrated = pxc_hand->IsCalibrated() ? true : false;
-    js_hand->body_side = ConvertBodySide(pxc_hand->QueryBodySide());
-    PopulateRect(js_hand->bounding_box_image,
-                  pxc_hand->QueryBoundingBoxImage());
-    PopulatePoint2D(js_hand->mass_center_image,
-                    pxc_hand->QueryMassCenterImage());
-    PopulatePoint3D(js_hand->mass_center_world,
-                    pxc_hand->QueryMassCenterWorld());
-    PopulatePoint4D(js_hand->palm_orientation,
-                    pxc_hand->QueryPalmOrientation());
-    js_hand->palm_radius_image = pxc_hand->QueryPalmRadiusImage();
-    js_hand->palm_radius_world = pxc_hand->QueryPalmRadiusWorld();
-    POPULATE_EXTREMITY_POINTS;
-    POPULATE_FINGERS;
-    if (pxc_hand->HasTrackedJoints())
-      POPULATE_HAND_JOINTS(Tracked, tracked);
-    js_hand->tracking_status =
-        ConvertTrackingStatus(pxc_hand->QueryTrackingStatus());
-    js_hand->openness = pxc_hand->QueryOpenness();
-    if (pxc_hand->HasNormalizedJoints())
-      POPULATE_HAND_JOINTS(Normalized, normalized);
-    js_hand_data.hands.push_back(js_hand);
+
+    js_hands.push_back(js_hand);
   }
 
-  info->PostResult(GetHandData::Results::Create(js_hand_data));
+  info->PostResult(GetHands::Results::Create(js_hands));
+}
+
+void HandModuleObject::OnGetHandDataById(
+    scoped_ptr<XWalkExtensionFunctionInfo> info) {
+  scoped_ptr<GetHandDataById::Params> params(
+      GetHandDataById::Params::Create(*info->arguments()));
+  if (!params) {
+    info->PostResult(CreateErrorResult(ERROR_CODE_PARAM_UNSUPPORTED));
+    return;
+  }
+
+  if (!pxc_hand_data_) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "No hand data."));
+    return;
+  }
+
+  PXCHandData::IHand* pxc_hand = NULL;
+  if (PXC_FAILED(pxc_hand_data_->QueryHandDataById(
+      params->unique_id, pxc_hand))) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "Cannot get hand data by id."));
+    return;
+  }
+ 
+  HandData js_hand_data;
+    
+  js_hand_data.calibrated = pxc_hand->IsCalibrated() ? true : false;
+  js_hand_data.body_side = ConvertBodySide(pxc_hand->QueryBodySide());
+  PopulateRect(js_hand_data.bounding_box_image,
+                pxc_hand->QueryBoundingBoxImage());
+  PopulatePoint2D(js_hand_data.mass_center_image,
+                  pxc_hand->QueryMassCenterImage());
+  PopulatePoint3D(js_hand_data.mass_center_world,
+                  pxc_hand->QueryMassCenterWorld());
+  PopulatePoint4D(js_hand_data.palm_orientation,
+                  pxc_hand->QueryPalmOrientation());
+  js_hand_data.palm_radius_image = pxc_hand->QueryPalmRadiusImage();
+  js_hand_data.palm_radius_world = pxc_hand->QueryPalmRadiusWorld();
+  POPULATE_EXTREMITY_POINTS;
+  POPULATE_FINGERS;
+  if (pxc_hand->HasTrackedJoints())
+    POPULATE_HAND_JOINTS(Tracked, tracked);
+  js_hand_data.tracking_status =
+      ConvertTrackingStatus(pxc_hand->QueryTrackingStatus());
+  js_hand_data.openness = pxc_hand->QueryOpenness();
+  if (pxc_hand->HasNormalizedJoints())
+    POPULATE_HAND_JOINTS(Normalized, normalized);
+    
+
+  info->PostResult(GetHandDataById::Results::Create(js_hand_data));
 }
 
 void HandModuleObject::ReleaseResources() {

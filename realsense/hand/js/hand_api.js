@@ -38,12 +38,51 @@ var HandModule = function(objectId) {
     };
   }
 
+  var handModuleObject = this;
+
+  function wrapHandsReturns(hands) {
+    console.log(hands.length);
+    var handObjectArray = [];
+    for (var i in hands) {
+      debugger;
+      var handObject = new Hand(handModuleObject, hands[i]);
+      handObjectArray.push(handObject);
+    }
+    return handObjectArray;
+  }
+
   this._addMethodWithPromise('init');
   this._addMethodWithPromise('open');
   this._addMethodWithPromise('process');
   this._addMethodWithPromise('close');
   this._addMethodWithPromise('getSample', null, wrapSampleReturns);
-  this._addMethodWithPromise('getHandData');
+  this._addMethodWithPromise('getHands', null, wrapHandsReturns);
+  this._addMethodWithPromise('_getHandDataById');
+};
+
+var Hand = function(handModule, hand) {
+  Object.defineProperties(this, {
+    'uniqueId' : {
+      value: hand.uniqueId,
+    },
+    'timeStamp': {
+      value: hand.timeStamp,
+    },
+    'getHandData' : {
+      value: function () {
+        return new Promise(function(resolve, reject) {
+          handModule._getHandDataById(hand.uniqueId).then(
+            function(handData) {
+              resolve(handData);
+            },
+            function(error) {
+              reject(error);
+            }
+          );
+        });
+      },
+    }
+  });
 };
 
 HandModule.prototype = new common.EventTargetPrototype();
