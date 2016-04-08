@@ -142,12 +142,11 @@ namespace hand_module {
 
   interface Functions {
     void init();
-    void open();
-    void close();
+    void openDevice();
+    void closeDevice();
 
-    void process();
+    void detect(HandDataPromise promise);
     void getSample(SamplePromise promise);
-    void getHandData(HandDataPromise promise);
     
     [nodoc] HandModule handModuleConstructor(DOMString objectId);
   };

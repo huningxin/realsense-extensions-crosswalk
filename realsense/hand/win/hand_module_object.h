@@ -32,15 +32,13 @@ class HandModuleObject
   // Message handlers.
   void OnInit(
      scoped_ptr<XWalkExtensionFunctionInfo> info);
-  void OnOpen(
+  void OnOpenDevice(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
-  void OnClose(
+  void OnCloseDevice(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
-  void OnProcess(
+  void OnDetect(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
   void OnGetSample(
-      scoped_ptr<XWalkExtensionFunctionInfo> info);
-  void OnGetHandData(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
 
   // Helpers.
@@ -48,11 +46,11 @@ class HandModuleObject
 
  private:
   // UNINITIALIZED --- init() ---> INITIALIZED
-  // INITIALIZED   -- open() ---> STREAMING
-  // STREAMING     --- close() ---> INITIALIZED
+  // INITIALIZED   -- openDevice() ---> STREAMING
+  // STREAMING     --- closeDevice() ---> INITIALIZED
   //
   // new HandModuleObject with UNINITIALIZED state.
-  // delete HandModuleObject will release.
+  // delete HandModuleObject will release all resources.
   enum State {
     UNINITIALIZED,
     INITIALIZED,

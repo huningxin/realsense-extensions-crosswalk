@@ -56,8 +56,8 @@
       </div>
     </div>
     <div style='margin-bottom:5px;' class='center' id='viewer'>
-      <canvas id='overlay' style='z-index: 1;'></canvas>
-      <canvas id='depth'></canvas>
+      <canvas id='overlay' style='transform: scale(-1, 1); z-index: 1;'></canvas>
+      <canvas id='depth' style='transform: scale(-1, 1);'></canvas>
     </div>
     <p class='footer'>Status: <span id='status'></span></p>
   </body>

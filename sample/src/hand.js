@@ -34,19 +34,43 @@ var showDepth = document.getElementById('depthmap');
 showDepth.checked = true;
 var lineWidth = 3;
 
-function runPipeline() {
-  handModule.process().then(
-      function() {
-        renderDepth();
-        renderHandData();
+var handData;
+var handDataUpdated = false;
+
+var depthImage;
+var depthImageUpdated = false;
+
+function detectHands() {
+  handModule.detect().then(
+      function(data) {
+        handData = data;
+        handDataUpdated = true;
+        
+        if (showDepth.checked) {
+          handModule.getSample().then(
+              function(sample) {
+                depthImage = sample.depth;
+                depthImageUpdated = true;
+              },
+              handleError
+          );
+        }
+
         fpsCounter.update();
+
         if (!stopped)
-          runPipeline();
+          detectHands();
       },
       function(e) {
         statusSpan.innerHTML = e.message;
       }
   );
+}
+
+function render() {
+  renderDepth();
+  renderHandData();
+  requestAnimationFrame(render);
 }
 
 var isRenderDepth = showDepth.checked;
@@ -61,27 +85,27 @@ function renderDepth() {
     return;
   }
   isRenderDepth = showDepth.checked;
-  handModule.getSample().then(
-      function(sample) {
-        var depthImage = sample.depth;
-        if (depthImage.width != depthCanvas.width || depthImage.height != depthCanvas.height) {
-          depthCanvas.width = depthImage.width;
-          depthCanvas.height = depthImage.height;
-          depthContext = depthCanvas.getContext('2d');
-          overlayCanvas.width = depthImage.width;
-          overlayCanvas.height = depthImage.height;
-          overlayContext = overlayCanvas.getContext('2d');
-          statusSpan.innerHTML = 'depth image (' +
-              depthImage.width + 'x' + depthImage.height + ')';
-        }
-        depthContext.clearRect(0, 0, depthCanvas.width, depthCanvas.height);
-        var imageData = depthContext.createImageData(depthImage.width, depthImage.height);
-        RSUtils.ConvertDepthToRGBUsingHistogram(
-            depthImage, [255, 255, 255], [0, 0, 0], imageData.data);
-        depthContext.putImageData(imageData, 0, 0);
-      },
-      handleError
-  );
+
+  if (!depthImageUpdated)
+    return;
+  
+  if (depthImage.width != depthCanvas.width || depthImage.height != depthCanvas.height) {
+    depthCanvas.width = depthImage.width;
+    depthCanvas.height = depthImage.height;
+    depthContext = depthCanvas.getContext('2d');
+    overlayCanvas.width = depthImage.width;
+    overlayCanvas.height = depthImage.height;
+    overlayContext = overlayCanvas.getContext('2d');
+    statusSpan.innerHTML = 'depth image (' +
+        depthImage.width + 'x' + depthImage.height + ')';
+  }
+  depthContext.clearRect(0, 0, depthCanvas.width, depthCanvas.height);
+  var imageData = depthContext.createImageData(depthImage.width, depthImage.height);
+  RSUtils.ConvertDepthToRGBUsingHistogram(
+      depthImage, [255, 255, 255], [0, 0, 0], imageData.data);
+  depthContext.putImageData(imageData, 0, 0);
+
+  depthImageUpdated = false;
 }
 
 function checkRenderHandData() {
@@ -100,75 +124,76 @@ function renderHandData() {
     return;
   }
   isRenderHandData = checkRenderHandData();
-  handModule.getHandData().then(
-      function(handData) {
-        function drawArc(center, radius, color) {
-          overlayContext.strokeStyle = color;
-          overlayContext.lineWidth = lineWidth;
+
+  if (!handDataUpdated)
+    return;
+
+  function drawArc(center, radius, color) {
+    overlayContext.strokeStyle = color;
+    overlayContext.lineWidth = lineWidth;
+    overlayContext.beginPath();
+    overlayContext.arc(center.x, center.y, radius, 0, Math.PI * 2, true);
+    overlayContext.stroke();
+  }
+  overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  for (var index in handData.hands) {
+    var hand = handData.hands[index];
+    if (drawExtremePoints.checked) {
+      for (var property in hand.extremityPoints) {
+        var radius = 2;
+        var point = hand.extremityPoints[property];
+        drawArc(point.pointImage, radius, 'red');
+      }
+    }
+    if (drawJoints.checked || drawSkeleton.checked) {
+      var joints;
+      if (showTrackedJoints)
+        joints = hand.trackedJoints;
+      else
+        joints = hand.normalizedJoints;
+      if (drawSkeleton.checked) {
+        overlayContext.strokeStyle = 'rgb(51,153,255)';
+        overlayContext.lineWidth = 3;
+        function drawFingerSkeleton(wrist, finger) {
           overlayContext.beginPath();
-          overlayContext.arc(center.x, center.y, radius, 0, Math.PI * 2, true);
+          overlayContext.moveTo(wrist.positionImage.x, wrist.positionImage.y);
+          overlayContext.lineTo(finger.base.positionImage.x, finger.base.positionImage.y);
+          overlayContext.moveTo(finger.base.positionImage.x, finger.base.positionImage.y);
+          overlayContext.lineTo(finger.joint1.positionImage.x, finger.joint1.positionImage.y);
+          overlayContext.moveTo(finger.joint1.positionImage.x, finger.joint1.positionImage.y);
+          overlayContext.lineTo(finger.joint2.positionImage.x, finger.joint2.positionImage.y);
+          overlayContext.moveTo(finger.joint2.positionImage.x, finger.joint2.positionImage.y);
+          overlayContext.lineTo(finger.tip.positionImage.x, finger.tip.positionImage.y);
+          overlayContext.moveTo(finger.tip.positionImage.x, finger.tip.positionImage.y);
           overlayContext.stroke();
         }
-        overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-        for (var index in handData.hands) {
-          var hand = handData.hands[index];
-          if (drawExtremePoints.checked) {
-            for (var property in hand.extremityPoints) {
-              var radius = 2;
-              var point = hand.extremityPoints[property];
-              drawArc(point.pointImage, radius, 'red');
-            }
-          }
-          if (drawJoints.checked || drawSkeleton.checked) {
-            var joints;
-            if (showTrackedJoints)
-              joints = hand.trackedJoints;
-            else
-              joints = hand.normalizedJoints;
-            if (drawSkeleton.checked) {
-              overlayContext.strokeStyle = 'rgb(51,153,255)';
-              overlayContext.lineWidth = 3;
-              function drawFingerSkeleton(wrist, finger) {
-                overlayContext.beginPath();
-                overlayContext.moveTo(wrist.positionImage.x, wrist.positionImage.y);
-                overlayContext.lineTo(finger.base.positionImage.x, finger.base.positionImage.y);
-                overlayContext.moveTo(finger.base.positionImage.x, finger.base.positionImage.y);
-                overlayContext.lineTo(finger.joint1.positionImage.x, finger.joint1.positionImage.y);
-                overlayContext.moveTo(finger.joint1.positionImage.x, finger.joint1.positionImage.y);
-                overlayContext.lineTo(finger.joint2.positionImage.x, finger.joint2.positionImage.y);
-                overlayContext.moveTo(finger.joint2.positionImage.x, finger.joint2.positionImage.y);
-                overlayContext.lineTo(finger.tip.positionImage.x, finger.tip.positionImage.y);
-                overlayContext.moveTo(finger.tip.positionImage.x, finger.tip.positionImage.y);
-                overlayContext.stroke();
-              }
-              drawFingerSkeleton(joints.wrist, joints.thumb);
-              drawFingerSkeleton(joints.wrist, joints.index);
-              drawFingerSkeleton(joints.wrist, joints.middle);
-              drawFingerSkeleton(joints.wrist, joints.ring);
-              drawFingerSkeleton(joints.wrist, joints.pinky);
-            }
+        drawFingerSkeleton(joints.wrist, joints.thumb);
+        drawFingerSkeleton(joints.wrist, joints.index);
+        drawFingerSkeleton(joints.wrist, joints.middle);
+        drawFingerSkeleton(joints.wrist, joints.ring);
+        drawFingerSkeleton(joints.wrist, joints.pinky);
+      }
 
-            if (drawJoints.checked) {
-              var radius = 2;
-              drawArc(joints.wrist.positionImage, radius, 'black');
-              drawArc(joints.center.positionImage, radius + 4, 'red');
-              function drawFingerJoints(finger, radius, color) {
-                drawArc(finger.base.positionImage, radius, color);
-                drawArc(finger.joint1.positionImage, radius, color);
-                drawArc(finger.joint2.positionImage, radius, color);
-                drawArc(finger.tip.positionImage, radius + 3, color);
-              }
-              drawFingerJoints(joints.thumb, radius, 'green');
-              drawFingerJoints(joints.index, radius, 'rgb(0,102,204)');
-              drawFingerJoints(joints.middle, radius, 'rgb(245,245,0)');
-              drawFingerJoints(joints.ring, radius, 'rgb(0,245,245)');
-              drawFingerJoints(joints.pinky, radius, 'rgb(255,184,112)');
-            }
-          }
+      if (drawJoints.checked) {
+        var radius = 2;
+        drawArc(joints.wrist.positionImage, radius, 'black');
+        drawArc(joints.center.positionImage, radius + 4, 'red');
+        function drawFingerJoints(finger, radius, color) {
+          drawArc(finger.base.positionImage, radius, color);
+          drawArc(finger.joint1.positionImage, radius, color);
+          drawArc(finger.joint2.positionImage, radius, color);
+          drawArc(finger.tip.positionImage, radius + 3, color);
         }
-      },
-      handleError
-  );
+        drawFingerJoints(joints.thumb, radius, 'green');
+        drawFingerJoints(joints.index, radius, 'rgb(0,102,204)');
+        drawFingerJoints(joints.middle, radius, 'rgb(245,245,0)');
+        drawFingerJoints(joints.ring, radius, 'rgb(0,245,245)');
+        drawFingerJoints(joints.pinky, radius, 'rgb(255,184,112)');
+      }
+    }
+  }
+
+  handDataUpdated = false;
 }
 
 function handleError(e) {
@@ -190,17 +215,17 @@ function main() {
       handleError
   );
   startButton.onclick = function(e) {
-    handModule.open().then(
+    handModule.openDevice().then(
         function() {
           statusSpan.innerHTML = 'open succeeds.';
           stopped = false;
-          runPipeline();
+          detectHands();
         },
         handleError
     );
   };
   stopButton.onclick = function(e) {
-    handModule.close().then(
+    handModule.closeDevice().then(
         function() {
           statusSpan.innerHTML = 'close succeeds.';
           stopped = true;
@@ -208,4 +233,6 @@ function main() {
         handleError
     );
   };
+
+  render();
 }

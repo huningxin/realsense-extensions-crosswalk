@@ -172,12 +172,10 @@ HandModuleObject::HandModuleObject()
       pxc_depth_image_(NULL),
       binary_message_size_(0) {
   MESSAGE_TO_METHOD("init", HandModuleObject::OnInit);
-  MESSAGE_TO_METHOD("open", HandModuleObject::OnOpen);
-  MESSAGE_TO_METHOD("close", HandModuleObject::OnClose);
-  MESSAGE_TO_METHOD("process", HandModuleObject::OnProcess);
+  MESSAGE_TO_METHOD("openDevice", HandModuleObject::OnOpenDevice);
+  MESSAGE_TO_METHOD("closeDevice", HandModuleObject::OnCloseDevice);
+  MESSAGE_TO_METHOD("detect", HandModuleObject::OnDetect);
   MESSAGE_TO_METHOD("getSample", HandModuleObject::OnGetSample);
-  MESSAGE_TO_METHOD("getHandData",
-                    HandModuleObject::OnGetHandData);
 }
 
 HandModuleObject::~HandModuleObject() {
@@ -224,7 +222,7 @@ void HandModuleObject::OnInit(
   info->PostResult(CreateSuccessResult());
 }
 
-void HandModuleObject::OnOpen(
+void HandModuleObject::OnOpenDevice(
     scoped_ptr<XWalkExtensionFunctionInfo> info) {
   if (state_ != INITIALIZED) {
     info->PostResult(
@@ -277,7 +275,7 @@ void HandModuleObject::OnOpen(
   info->PostResult(CreateSuccessResult());
 }
 
-void HandModuleObject::OnClose(
+void HandModuleObject::OnCloseDevice(
     scoped_ptr<XWalkExtensionFunctionInfo> info) {
   if (state_ != STREAMING) {
     info->PostResult(
@@ -320,7 +318,7 @@ void HandModuleObject::OnClose(
   info->PostResult(CreateSuccessResult());
 }
 
-void HandModuleObject::OnProcess(
+void HandModuleObject::OnDetect(
   scoped_ptr<XWalkExtensionFunctionInfo> info) {
   if (state_ != STREAMING) {
     info->PostResult(
@@ -357,9 +355,48 @@ void HandModuleObject::OnProcess(
     return;
   }
 
-  pxc_sense_manager_->ReleaseFrame();
+  HandData js_hand_data;
+  js_hand_data.time_stamp = sample_processed_time_stamp_;
 
-  info->PostResult(CreateSuccessResult());
+  int number_of_hands = pxc_hand_data_->QueryNumberOfHands();
+  for (int i = 0; i < number_of_hands; ++i) {
+    PXCHandData::IHand* pxc_hand = NULL;
+    if (PXC_FAILED(pxc_hand_data_->QueryHandData(
+        PXCHandData::AccessOrderType::ACCESS_ORDER_BY_TIME,
+        i, pxc_hand))) {
+      continue;
+    }
+    linked_ptr<Hand> js_hand(new Hand);
+    
+    js_hand->unique_id = pxc_hand->QueryUniqueId();
+    js_hand->time_stamp = pxc_hand->QueryTimeStamp();
+    js_hand->calibrated = pxc_hand->IsCalibrated() ? true : false;
+    js_hand->body_side = ConvertBodySide(pxc_hand->QueryBodySide());
+    PopulateRect(js_hand->bounding_box_image,
+                  pxc_hand->QueryBoundingBoxImage());
+    PopulatePoint2D(js_hand->mass_center_image,
+                    pxc_hand->QueryMassCenterImage());
+    PopulatePoint3D(js_hand->mass_center_world,
+                    pxc_hand->QueryMassCenterWorld());
+    PopulatePoint4D(js_hand->palm_orientation,
+                    pxc_hand->QueryPalmOrientation());
+    js_hand->palm_radius_image = pxc_hand->QueryPalmRadiusImage();
+    js_hand->palm_radius_world = pxc_hand->QueryPalmRadiusWorld();
+    POPULATE_EXTREMITY_POINTS;
+    POPULATE_FINGERS;
+    if (pxc_hand->HasTrackedJoints())
+      POPULATE_HAND_JOINTS(Tracked, tracked);
+    js_hand->tracking_status =
+        ConvertTrackingStatus(pxc_hand->QueryTrackingStatus());
+    js_hand->openness = pxc_hand->QueryOpenness();
+    if (pxc_hand->HasNormalizedJoints())
+      POPULATE_HAND_JOINTS(Normalized, normalized);
+    js_hand_data.hands.push_back(js_hand);
+  }
+
+  info->PostResult(Detect::Results::Create(js_hand_data));
+
+  pxc_sense_manager_->ReleaseFrame();
 }
 
 void HandModuleObject::OnGetSample(
@@ -430,57 +467,6 @@ void HandModuleObject::OnGetSample(
       reinterpret_cast<const char*>(binary_message_.get()),
       binary_message_size_));
   info->PostResult(result.Pass());
-}
-
-void HandModuleObject::OnGetHandData(
-  scoped_ptr<XWalkExtensionFunctionInfo> info) {
-  if (!pxc_hand_data_) {
-    info->PostResult(
-        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
-                          "No hand data."));
-    return;
-  }
- 
-  HandData js_hand_data;
-  js_hand_data.time_stamp = sample_processed_time_stamp_;
-
-  int number_of_hands = pxc_hand_data_->QueryNumberOfHands();
-  for (int i = 0; i < number_of_hands; ++i) {
-    PXCHandData::IHand* pxc_hand = NULL;
-    if (PXC_FAILED(pxc_hand_data_->QueryHandData(
-        PXCHandData::AccessOrderType::ACCESS_ORDER_BY_TIME,
-        i, pxc_hand))) {
-      continue;
-    }
-    linked_ptr<Hand> js_hand(new Hand);
-    
-    js_hand->unique_id = pxc_hand->QueryUniqueId();
-    js_hand->time_stamp = pxc_hand->QueryTimeStamp();
-    js_hand->calibrated = pxc_hand->IsCalibrated() ? true : false;
-    js_hand->body_side = ConvertBodySide(pxc_hand->QueryBodySide());
-    PopulateRect(js_hand->bounding_box_image,
-                  pxc_hand->QueryBoundingBoxImage());
-    PopulatePoint2D(js_hand->mass_center_image,
-                    pxc_hand->QueryMassCenterImage());
-    PopulatePoint3D(js_hand->mass_center_world,
-                    pxc_hand->QueryMassCenterWorld());
-    PopulatePoint4D(js_hand->palm_orientation,
-                    pxc_hand->QueryPalmOrientation());
-    js_hand->palm_radius_image = pxc_hand->QueryPalmRadiusImage();
-    js_hand->palm_radius_world = pxc_hand->QueryPalmRadiusWorld();
-    POPULATE_EXTREMITY_POINTS;
-    POPULATE_FINGERS;
-    if (pxc_hand->HasTrackedJoints())
-      POPULATE_HAND_JOINTS(Tracked, tracked);
-    js_hand->tracking_status =
-        ConvertTrackingStatus(pxc_hand->QueryTrackingStatus());
-    js_hand->openness = pxc_hand->QueryOpenness();
-    if (pxc_hand->HasNormalizedJoints())
-      POPULATE_HAND_JOINTS(Normalized, normalized);
-    js_hand_data.hands.push_back(js_hand);
-  }
-
-  info->PostResult(GetHandData::Results::Create(js_hand_data));
 }
 
 void HandModuleObject::ReleaseResources() {

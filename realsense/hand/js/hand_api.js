@@ -39,11 +39,10 @@ var HandModule = function(objectId) {
   }
 
   this._addMethodWithPromise('init');
-  this._addMethodWithPromise('open');
-  this._addMethodWithPromise('process');
-  this._addMethodWithPromise('close');
+  this._addMethodWithPromise('openDevice');
+  this._addMethodWithPromise('closeDevice');
+  this._addMethodWithPromise('detect');
   this._addMethodWithPromise('getSample', null, wrapSampleReturns);
-  this._addMethodWithPromise('getHandData');
 };
 
 HandModule.prototype = new common.EventTargetPrototype();
