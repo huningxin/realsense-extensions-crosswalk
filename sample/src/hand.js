@@ -55,7 +55,15 @@ function detectHands() {
       function(data) {
         handData = data;
         handDataUpdated = true;
-        
+        for (var i in handData) {
+          var hand = handData[i];
+          hand.getSegmentationImage().then(
+              function(image) {
+                hand.segmentedImage = image;
+              },
+              handleError
+          );
+        }        
         if (showDepth.checked) {
           handModule.getSample().then(
               function(sample) {

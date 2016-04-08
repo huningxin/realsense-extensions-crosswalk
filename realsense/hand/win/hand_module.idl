@@ -6,7 +6,8 @@
 namespace hand_module {
   enum PixelFormat {
     RGB32,
-    DEPTH
+    DEPTH,
+    Y8
   };
 
   enum BodySide {
@@ -128,11 +129,13 @@ namespace hand_module {
   };
 
   dictionary Sample {
+    double timeStamp;
     Image depth;
   };
 
   callback SamplePromise = void (Sample sample);
   callback HandDataPromise = void (Hand[] hands);
+  callback ImagePromise = void(Image image);
 
   interface Functions {
     void init();
@@ -141,6 +144,8 @@ namespace hand_module {
 
     void detect(HandDataPromise promise);
     void getSample(SamplePromise promise);
+
+    void _getSegmentationImageById(long handId, ImagePromise promise);
     
     [nodoc] HandModule handModuleConstructor(DOMString objectId);
   };

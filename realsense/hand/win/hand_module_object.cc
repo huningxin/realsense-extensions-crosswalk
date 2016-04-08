@@ -176,6 +176,8 @@ HandModuleObject::HandModuleObject()
   MESSAGE_TO_METHOD("closeDevice", HandModuleObject::OnCloseDevice);
   MESSAGE_TO_METHOD("detect", HandModuleObject::OnDetect);
   MESSAGE_TO_METHOD("getSample", HandModuleObject::OnGetSample);
+  MESSAGE_TO_METHOD("_getSegmentationImageById",
+                    HandModuleObject::OnGetSegmentationImageById);
 }
 
 HandModuleObject::~HandModuleObject() {
@@ -467,6 +469,91 @@ void HandModuleObject::OnGetSample(
       binary_message_size_));
   info->PostResult(result.Pass());
 }
+
+void HandModuleObject::OnGetSegmentationImageById(
+    scoped_ptr<XWalkExtensionFunctionInfo> info) {
+   scoped_ptr<GetSegmentationImageById::Params> params(
+      GetSegmentationImageById::Params::Create(*info->arguments()));
+  if (!params) {
+    info->PostResult(CreateErrorResult(ERROR_CODE_PARAM_UNSUPPORTED));
+    return;
+  }
+
+  if (!pxc_hand_data_) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "No hand data."));
+    return;
+  }
+
+  PXCHandData::IHand* pxc_hand = NULL;
+  if (PXC_FAILED(pxc_hand_data_->QueryHandDataById(
+      params->hand_id, pxc_hand))) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "Cannot get hand data by id."));
+    return;
+  }
+
+  const int call_id_size = sizeof(int);
+  const int image_header_size = 2 * sizeof(int); // width, height
+
+  PXCImage* image;
+  if (PXC_FAILED(pxc_hand->QuerySegmentationImage(image))) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "Cannot get segmented image."));
+    return;
+  }
+  
+  CHECK(image);
+  PXCImage::ImageInfo image_info = image->QueryInfo();
+  int image_size =
+      image_info.width * image_info.height * sizeof(uint8);
+  
+  size_t binary_message_size = call_id_size + image_header_size + image_size;
+
+  if (binary_message_size_ < binary_message_size) {
+    binary_message_.reset(new uint8[binary_message_size]);
+    binary_message_size_ = binary_message_size;
+  }
+
+  int offset = call_id_size;
+
+  int* int_view = reinterpret_cast<int*>(binary_message_.get() + offset);
+  int_view[0] = image_info.width;
+  int_view[1] = image_info.height;
+
+  PXCImage::ImageData image_data;
+  if (PXC_FAILED(image->AcquireAccess(
+        PXCImage::ACCESS_READ, PXCImage::PIXEL_FORMAT_Y8, &image_data))) {
+    info->PostResult(
+        CreateErrorResult(ERROR_CODE_EXEC_FAILED,
+                          "Failed to access depth image data."));
+    return;
+  }
+
+  offset += image_header_size;
+  uint8_t* uint8_view =
+      reinterpret_cast<uint8_t*>(binary_message_.get() + offset);
+  int k = 0;
+  for (int y = 0; y < image_info.height; ++y) {
+    for (int x = 0; x < image_info.width; ++x) {
+      uint8_t* gray8 = reinterpret_cast<uint8_t*>(
+          image_data.planes[0] + image_data.pitches[0] * y);
+      uint8_view[k++] = gray8[x];
+    }
+  }
+
+  image->ReleaseAccess(&image_data);
+ 
+  scoped_ptr<base::ListValue> result(new base::ListValue());
+  result->Append(base::BinaryValue::CreateWithCopiedBuffer(
+      reinterpret_cast<const char*>(binary_message_.get()),
+      binary_message_size_));
+  info->PostResult(result.Pass());
+}
+
 
 void HandModuleObject::ReleaseResources() {
   binary_message_.reset();

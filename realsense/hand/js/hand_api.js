@@ -38,6 +38,17 @@ var HandModule = function(objectId) {
     };
   }
 
+  function wrapY8ImageReturns(data) {
+    // 3 int32 (4 bytes) values.
+    var header_byte_offset = 3 * 4;
+    var int32_array = new Int32Array(data, 0, 3);
+    // int32_array[0] is the callback id.
+    var width = int32_array[1];
+    var height = int32_array[2];
+    var buffer = new Uint8Array(data, header_byte_offset, width * height);
+    return { format: 'Y8', width: width, height: height, data: buffer };
+  }
+
   var handModuleObject = this;
   function wrapHandsReturns(hands) {
     var handObjectArray = [];
@@ -53,6 +64,8 @@ var HandModule = function(objectId) {
   this._addMethodWithPromise('closeDevice');
   this._addMethodWithPromise('detect', null, wrapHandsReturns);
   this._addMethodWithPromise('getSample', null, wrapSampleReturns);
+
+  this._addMethodWithPromise('_getSegmentationImageById', null, wrapY8ImageReturns);
 };
 
 var Hand = function(handModule, hand) {
@@ -107,6 +120,7 @@ var Hand = function(handModule, hand) {
   function addMethod(handObject, name) {
     Object.defineProperty(handObject, name, {
       value: function() {
+        debugger;
         return new Promise(function(resolve, reject) {
           handModule['_' + name + 'ById'](hand.uniqueId).then(
             function(result) {
@@ -120,6 +134,8 @@ var Hand = function(handModule, hand) {
       }
     });
   };
+
+  addMethod(this, 'getSegmentationImage');
 };
 
 HandModule.prototype = new common.EventTargetPrototype();

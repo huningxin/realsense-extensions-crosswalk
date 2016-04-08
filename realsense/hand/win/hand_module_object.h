@@ -40,6 +40,8 @@ class HandModuleObject
       scoped_ptr<XWalkExtensionFunctionInfo> info);
   void OnGetSample(
       scoped_ptr<XWalkExtensionFunctionInfo> info);
+  void OnGetSegmentationImageById(
+      scoped_ptr<XWalkExtensionFunctionInfo> info);
 
   // Helpers.
   void ReleaseResources();
