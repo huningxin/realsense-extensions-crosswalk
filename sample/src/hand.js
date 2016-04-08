@@ -34,6 +34,16 @@ var showDepth = document.getElementById('depthmap');
 showDepth.checked = true;
 var lineWidth = 3;
 
+var mirror = document.getElementById('mirror');
+mirror.checked = true;
+mirror.onchange = function(e) {
+  if (e.target.checked) {
+    overlayCanvas.style.transform = depthCanvas.style.transform = 'scale(-1, 1)';
+  } else {
+    overlayCanvas.style.transform = depthCanvas.style.transform = '';
+  }
+}
+
 var handData;
 var handDataUpdated = false;
 
