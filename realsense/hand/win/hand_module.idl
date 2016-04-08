@@ -128,17 +128,11 @@ namespace hand_module {
   };
 
   dictionary Sample {
-    double timeStamp;
     Image depth;
   };
 
-  dictionary HandData {
-    double timeStamp;
-    Hand[] hands;
-  };
-
   callback SamplePromise = void (Sample sample);
-  callback HandDataPromise = void (HandData data);
+  callback HandDataPromise = void (Hand[] hands);
 
   interface Functions {
     void init();

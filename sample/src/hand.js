@@ -146,8 +146,8 @@ function renderHandData() {
     overlayContext.stroke();
   }
   overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-  for (var index in handData.hands) {
-    var hand = handData.hands[index];
+  for (var index in handData) {
+    var hand = handData[index];
     if (drawExtremePoints.checked) {
       for (var property in hand.extremityPoints) {
         var radius = 2;

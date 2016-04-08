@@ -355,8 +355,7 @@ void HandModuleObject::OnDetect(
     return;
   }
 
-  HandData js_hand_data;
-  js_hand_data.time_stamp = sample_processed_time_stamp_;
+  std::vector<linked_ptr<Hand> > hands;
 
   int number_of_hands = pxc_hand_data_->QueryNumberOfHands();
   for (int i = 0; i < number_of_hands; ++i) {
@@ -391,10 +390,10 @@ void HandModuleObject::OnDetect(
     js_hand->openness = pxc_hand->QueryOpenness();
     if (pxc_hand->HasNormalizedJoints())
       POPULATE_HAND_JOINTS(Normalized, normalized);
-    js_hand_data.hands.push_back(js_hand);
+    hands.push_back(js_hand);
   }
 
-  info->PostResult(Detect::Results::Create(js_hand_data));
+  info->PostResult(Detect::Results::Create(hands));
 
   pxc_sense_manager_->ReleaseFrame();
 }
